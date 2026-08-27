@@ -1,0 +1,8 @@
+{
+  "name": "RangeCraft",
+  "description": "Enterprise-grade commercial strategy, trade spend waterfall modeling, and 52-week ACCC-compliant promotional planning suite for Australian FMCG KAMs and brand owners.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
