@@ -88,6 +88,141 @@ export function calculateMechanicFinancials(
   };
 }
 
+export interface SkuFinancialBreakdown {
+  sku: string;
+  name: string;
+  category: string;
+  isHero: boolean;
+  regularRrp: number;
+  promoRrp: number;
+  cost: number;
+  projectedUnits: number;
+  projectedRevenueAud: number;
+  projectedMarginAud: number;
+  projectedMarginPercent: number;
+  tradeSpendAud: number;
+}
+
+export interface MultiSkuWeekFinancials {
+  promoRrp: number;
+  liftMultiplier: number;
+  projectedUnits: number;
+  projectedRevenueAud: number;
+  projectedMarginAud: number;
+  projectedMarginPercent: number;
+  tradeSpendAud: number;
+  totalSkusCount: number;
+  skuBreakdown: SkuFinancialBreakdown[];
+}
+
+/**
+ * Computes combined promotional financials for 1 Hero SKU + any number of supporting SKUs
+ * (minimum 1 SKU up to entire catalog) sharing the week's promotional mechanic.
+ */
+export function calculateWeekMultiSkuFinancials(
+  heroProduct: Product,
+  secondaryProducts: Product[],
+  mechanic: PromoMechanic,
+  isMajorEvent: boolean
+): MultiSkuWeekFinancials {
+  const heroBaseline = Math.max(1, heroProduct.weeklyUnitsBaseline || 50);
+  const heroFin = calculateMechanicFinancials(heroProduct, mechanic, heroBaseline, isMajorEvent);
+
+  const uniqueSecondaries: Product[] = [];
+  const seen = new Set<string>([heroProduct.sku]);
+  for (const sp of secondaryProducts) {
+    if (sp && !seen.has(sp.sku)) {
+      seen.add(sp.sku);
+      uniqueSecondaries.push(sp);
+    }
+  }
+
+  const skuBreakdown: SkuFinancialBreakdown[] = [
+    {
+      sku: heroProduct.sku,
+      name: heroProduct.name,
+      category: heroProduct.category,
+      isHero: true,
+      regularRrp: heroProduct.rrp,
+      promoRrp: heroFin.promoRrp,
+      cost: heroProduct.cost,
+      projectedUnits: heroFin.projectedUnits,
+      projectedRevenueAud: heroFin.projectedRevenueAud,
+      projectedMarginAud: heroFin.projectedMarginAud,
+      projectedMarginPercent: heroFin.projectedMarginPercent,
+      tradeSpendAud: heroFin.tradeSpendAud,
+    }
+  ];
+
+  let totalUnits = heroFin.projectedUnits;
+  let totalRevenue = heroFin.projectedRevenueAud;
+  let totalMarginAud = heroFin.projectedMarginAud;
+  let totalTradeSpend = heroFin.tradeSpendAud;
+
+  const heroDiscountRatio = heroProduct.rrp > 0 && heroFin.promoRrp > 0
+    ? Math.max(0.25, Math.min(0.95, heroFin.promoRrp / heroProduct.rrp))
+    : 0.8;
+
+  for (const secProd of uniqueSecondaries) {
+    let secMechanic: PromoMechanic = mechanic;
+    if (mechanic.type === 'price_drop') {
+      const equivPct = Math.max(5, Math.min(75, Number(((1 - heroDiscountRatio) * 100).toFixed(1))));
+      secMechanic = {
+        ...mechanic,
+        type: 'percentage_off',
+        discountValue: equivPct,
+        promoRrp: Number((secProd.rrp * heroDiscountRatio).toFixed(2)),
+      };
+    } else if (mechanic.type === 'multi_buy') {
+      const packSize = mechanic.discountValue > 0 && mechanic.discountValue <= 6 ? mechanic.discountValue : 2;
+      secMechanic = {
+        ...mechanic,
+        promoRrp: Number((secProd.rrp * packSize * heroDiscountRatio).toFixed(2)),
+      };
+    }
+
+    const secBaseline = Math.max(1, secProd.weeklyUnitsBaseline || 35);
+    const secFin = calculateMechanicFinancials(secProd, secMechanic, secBaseline, isMajorEvent);
+
+    totalUnits += secFin.projectedUnits;
+    totalRevenue += secFin.projectedRevenueAud;
+    totalMarginAud += secFin.projectedMarginAud;
+    totalTradeSpend += secFin.tradeSpendAud;
+
+    skuBreakdown.push({
+      sku: secProd.sku,
+      name: secProd.name,
+      category: secProd.category,
+      isHero: false,
+      regularRrp: secProd.rrp,
+      promoRrp: secFin.promoRrp,
+      cost: secProd.cost,
+      projectedUnits: secFin.projectedUnits,
+      projectedRevenueAud: secFin.projectedRevenueAud,
+      projectedMarginAud: secFin.projectedMarginAud,
+      projectedMarginPercent: secFin.projectedMarginPercent,
+      tradeSpendAud: secFin.tradeSpendAud,
+    });
+  }
+
+  const roundedRev = Number(totalRevenue.toFixed(2));
+  const roundedMargin = Number(totalMarginAud.toFixed(2));
+  const roundedTrade = Number(totalTradeSpend.toFixed(2));
+  const blendedMarginPct = roundedRev > 0 ? Number(((roundedMargin / roundedRev) * 100).toFixed(1)) : 0;
+
+  return {
+    promoRrp: heroFin.promoRrp,
+    liftMultiplier: heroFin.liftMultiplier,
+    projectedUnits: totalUnits,
+    projectedRevenueAud: roundedRev,
+    projectedMarginAud: roundedMargin,
+    projectedMarginPercent: blendedMarginPct,
+    tradeSpendAud: roundedTrade,
+    totalSkusCount: skuBreakdown.length,
+    skuBreakdown,
+  };
+}
+
 // -------------------------------------------------------------
 // SEASONALITY & REGULATORY COMPLIANCE HELPERS
 // -------------------------------------------------------------
@@ -533,11 +668,11 @@ export function autoReslotAndFixClashes(
     );
     lastMechanicUsed[hero.sku] = rec.mechanic.type;
 
-    // Financial calculations
-    const fin = calculateMechanicFinancials(
+    // Financial calculations across Hero + supporting SKUs
+    const fin = calculateWeekMultiSkuFinancials(
       hero,
+      secondaries,
       rec.mechanic,
-      hero.weeklyUnitsBaseline,
       weekMeta.isMajorRetailMoment
     );
 
@@ -660,20 +795,26 @@ export function auditClashes(promotions: WeekPromotion[], products: Product[]): 
       }
     }
 
-    // 2. Hiatus / Frequency Rule Check (ACCC 4-Week Hiatus & Baseline Margin Protection)
-    const requiredGap = heroProduct.minPromoGapWeeks || 4;
-    for (let prevIdx = Math.max(0, idx - requiredGap); prevIdx < idx; prevIdx++) {
-      const pastPromo = promotions[prevIdx];
-      if (pastPromo && (pastPromo.heroSku === heroProduct.sku || pastPromo.secondarySkus.includes(heroProduct.sku))) {
-        const gap = idx - prevIdx;
-        clashes.push({
-          id: `hiatus-clash-w${promo.weekNumber}-${heroProduct.sku}`,
-          weekNumber: promo.weekNumber,
-          type: 'hiatus_breach',
-          severity: gap < 3 ? 'critical' : 'warning',
-          message: `Hiatus breach: '${heroProduct.name}' was featured in Week ${pastPromo.weekNumber} (${gap} weeks ago). Minimum recommended hiatus is ${requiredGap} weeks to protect baseline sales and comply with ACCC two-price guidelines.`,
-          affectedSkus: [heroProduct.sku]
-        });
+    // 2. Hiatus / Frequency Rule Check (Custom 4-Week Hiatus & Baseline Margin Protection) across all promoted SKUs
+    for (const weekProd of allWeekProds) {
+      const requiredGap = weekProd.minPromoGapWeeks || 4;
+      for (let prevIdx = Math.max(0, idx - requiredGap); prevIdx < idx; prevIdx++) {
+        const pastPromo = promotions[prevIdx];
+        if (pastPromo && (pastPromo.heroSku === weekProd.sku || (pastPromo.secondarySkus || []).includes(weekProd.sku))) {
+          const gap = idx - prevIdx;
+          const id = `hiatus-clash-w${promo.weekNumber}-${weekProd.sku}`;
+          if (!clashes.some(c => c.id === id)) {
+            clashes.push({
+              id,
+              weekNumber: promo.weekNumber,
+              type: 'hiatus_breach',
+              severity: gap < 3 ? 'critical' : 'warning',
+              message: `Hiatus breach: '${weekProd.name}' was featured in Week ${pastPromo.weekNumber} (${gap} weeks ago). Minimum recommended hiatus is ${requiredGap} weeks to protect baseline sales and satisfy custom scheduling rules.`,
+              affectedSkus: [weekProd.sku]
+            });
+          }
+          break;
+        }
       }
     }
 
@@ -749,9 +890,12 @@ export function calculateStrategyKPIs(promotions: WeekPromotion[], products: Pro
     if (promo.heroSku) promotedSkusSet.add(promo.heroSku);
     (promo.secondarySkus || []).forEach(s => promotedSkusSet.add(s));
 
-    const heroProd = getProduct(promo.heroSku);
-    if (heroProd) {
-      baselineRevenueAud += (heroProd.weeklyUnitsBaseline || 0) * (heroProd.rrp || 0);
+    const weekSkus = Array.from(new Set([promo.heroSku, ...(promo.secondarySkus || [])].filter(Boolean)));
+    for (const s of weekSkus) {
+      const prod = getProduct(s);
+      if (prod) {
+        baselineRevenueAud += (prod.weeklyUnitsBaseline || 0) * (prod.rrp || 0);
+      }
     }
   }
 
@@ -760,8 +904,8 @@ export function calculateStrategyKPIs(promotions: WeekPromotion[], products: Pro
   const totalAnnualBaseline = totalCatalogWeeklyBaseline * 52;
 
   const totalIncrementalRevenueAud = Math.max(0, annualProjectedRevenueAud - (baselineRevenueAud * 1.0));
-  const overallLiftPercent = baselineRevenueAud > 0 ? Number(((totalIncrementalRevenueAud / baselineRevenueAud) * 100).toFixed(1)) : 42.5;
-  const blendedPromoMarginPercent = annualProjectedRevenueAud > 0 ? Number(((totalGrossProfitAud / annualProjectedRevenueAud) * 100).toFixed(1)) : 38.2;
+  const overallLiftPercent = baselineRevenueAud > 0 ? Number(((totalIncrementalRevenueAud / baselineRevenueAud) * 100).toFixed(1)) : 0;
+  const blendedPromoMarginPercent = annualProjectedRevenueAud > 0 ? Number(((totalGrossProfitAud / annualProjectedRevenueAud) * 100).toFixed(1)) : 0;
 
   const grossProfitNum = Number(totalGrossProfitAud.toFixed(2));
   const tradeSpendNum = Number(totalTradeSpendCoOpAud.toFixed(2));
@@ -972,10 +1116,14 @@ export function generateScenarioPlan(products: Product[], scenario: ScenarioType
       }
     }
 
-    const fin = calculateMechanicFinancials(
+    const secondaryProds = (promo.secondarySkus || [])
+      .map(sku => productMap.get(sku))
+      .filter((p): p is Product => Boolean(p));
+
+    const fin = calculateWeekMultiSkuFinancials(
       product,
+      secondaryProds,
       modifiedMechanic,
-      product.weeklyUnitsBaseline || 100,
       promo.isMajorRetailMoment
     );
 
@@ -993,7 +1141,7 @@ export function generateScenarioPlan(products: Product[], scenario: ScenarioType
 }
 
 // -------------------------------------------------------------
-// ACCC 4-WEEK HIATUS AUDIT & COMPLIANCE SCORE
+// CUSTOM 4-WEEK HIATUS AUDIT & COMPLIANCE SCORE
 // -------------------------------------------------------------
 
 export interface AcccComplianceAudit {
@@ -1019,11 +1167,12 @@ export function auditAcccCompliance(promotions: WeekPromotion[], products: Produ
 
   const skuPromoWeeks = new Map<string, number[]>();
   promotions.forEach(p => {
-    if (p.heroSku) {
-      const arr = skuPromoWeeks.get(p.heroSku) || [];
+    const activeWeekSkus = Array.from(new Set([p.heroSku, ...(p.secondarySkus || [])].filter(Boolean)));
+    activeWeekSkus.forEach(sku => {
+      const arr = skuPromoWeeks.get(sku) || [];
       arr.push(p.weekNumber);
-      skuPromoWeeks.set(p.heroSku, arr);
-    }
+      skuPromoWeeks.set(sku, arr);
+    });
   });
 
   const violations: AcccComplianceAudit['violations'] = [];
@@ -1049,7 +1198,7 @@ export function auditAcccCompliance(promotions: WeekPromotion[], products: Produ
           weekA: wA,
           weekB: wB,
           gapWeeks: gap,
-          message: `${prodName} promoted in Week ${wA} and Week ${wB} (${gap} week hiatus). Minimum 4 uninterrupted regular price weeks required under ACCC retail pricing guidelines.`
+          message: `${prodName} promoted in Week ${wA} and Week ${wB} (${gap} week hiatus). Minimum 4 uninterrupted regular price weeks required under Custom Scheduling Rules.`
         });
       }
     }
@@ -1065,8 +1214,8 @@ export function auditAcccCompliance(promotions: WeekPromotion[], products: Produ
 
   const recommendations: string[] = [];
   if (violations.length === 0) {
-    recommendations.push("Your 52-week promotional plan satisfies 100% of ACCC 4-week regular price hiatus standards.");
-    recommendations.push("All hero SKUs maintain sufficient unpromoted selling windows to substantiate genuine savings claims.");
+    recommendations.push("Your 52-week promotional plan satisfies 100% of Custom 4-week regular price hiatus rules.");
+    recommendations.push("All hero SKUs maintain sufficient unpromoted selling windows to protect baseline pricing integrity.");
   } else {
     recommendations.push(`Use the 1-Click Auto-Reslot feature to automatically shift ${violations.length} conflicting promotion(s) into available gap weeks.`);
     recommendations.push("Ensure deep discount mechanics (>35%) are strictly reserved for key national retail windows (EOFY, Black Friday, Christmas).");

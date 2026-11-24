@@ -1,37 +1,181 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    function isAuthenticated() {
+
+    // Default-deny global catch-all safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
       return request.auth != null;
     }
-    
+
     function isOwner(userId) {
-      return isAuthenticated() && request.auth.uid == userId;
+      return isSignedIn() && request.auth.uid == userId;
     }
 
-    // User profile document
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOptionalBoundedString(data, key, maxLen) {
+      return !(key in data) || (data[key] is string && data[key].size() <= maxLen);
+    }
+
+    function isOptionalNumber(data, key, minVal, maxVal) {
+      return !(key in data) || (data[key] is number && data[key] >= minVal && data[key] <= maxVal);
+    }
+
+    function isOptionalBool(data, key) {
+      return !(key in data) || (data[key] is bool);
+    }
+
+    function isValidUserFields(data) {
+      return data.keys().hasOnly([
+        'uid', 'email', 'displayName', 'firstName', 'lastName',
+        'phoneNumber', 'companyName', 'abn', 'streetAddress', 'houseNumber',
+        'country', 'acceptedTermsAt', 'jobRole', 'subscriptionTier', 'subscriptionStatus',
+        'aiGenerationsRemaining', 'aiMonthlyAllowance', 'aiTopUpCredits',
+        'unlimitedAi', 'canExportPdf', 'canAutoReslot', 'maxSkusAllowed',
+        'unlockedExports', 'trialExpiresAt', 'trialUsed', 'createdAt', 'lastLoginAt'
+      ])
+      && data.uid is string && data.uid == request.auth.uid && data.uid.size() <= 128
+      && data.email is string && data.email.size() <= 254
+      && data.displayName is string && data.displayName.size() <= 120
+      && data.subscriptionTier in ['free_trial', 'starter_plan', 'pro_planner', 'enterprise_tier']
+      && data.subscriptionStatus in ['active', 'trialing', 'past_due', 'cancelled']
+      && isOptionalBoundedString(data, 'firstName', 80)
+      && isOptionalBoundedString(data, 'lastName', 80)
+      && isOptionalBoundedString(data, 'phoneNumber', 40)
+      && isOptionalBoundedString(data, 'companyName', 160)
+      && isOptionalBoundedString(data, 'abn', 32)
+      && isOptionalBoundedString(data, 'streetAddress', 200)
+      && isOptionalBoundedString(data, 'houseNumber', 40)
+      && isOptionalBoundedString(data, 'country', 80)
+      && isOptionalBoundedString(data, 'acceptedTermsAt', 64)
+      && isOptionalBoundedString(data, 'jobRole', 100)
+      && isOptionalBoundedString(data, 'trialExpiresAt', 64)
+      && isOptionalBoundedString(data, 'createdAt', 64)
+      && isOptionalBoundedString(data, 'lastLoginAt', 64)
+      && isOptionalNumber(data, 'aiGenerationsRemaining', 0, 1000000)
+      && isOptionalNumber(data, 'aiMonthlyAllowance', 0, 1000000)
+      && isOptionalNumber(data, 'aiTopUpCredits', 0, 100000)
+      && isOptionalNumber(data, 'maxSkusAllowed', 0, 100000)
+      && isOptionalBool(data, 'unlimitedAi')
+      && isOptionalBool(data, 'canExportPdf')
+      && isOptionalBool(data, 'canAutoReslot')
+      && isOptionalBool(data, 'trialUsed')
+      && (!('unlockedExports' in data) || (
+        data.unlockedExports is list
+        && data.unlockedExports.size() <= 100
+        && (data.unlockedExports.size() == 0 || data.unlockedExports[0] is string)
+      ));
+    }
+
+    function isValidUserCreate(data) {
+      return data.keys().hasAll(['uid', 'email', 'displayName', 'subscriptionTier', 'subscriptionStatus'])
+        && isValidUserFields(data);
+    }
+
+    function isValidUserUpdate(data) {
+      return isValidUserFields(data);
+    }
+
+    function isValidPromoPlan(data) {
+      return data.keys().hasAll(['promotions', 'updatedAt'])
+        && data.keys().hasOnly(['promotions', 'updatedAt'])
+        && data.promotions is list
+        && data.promotions.size() <= 60
+        && (data.promotions.size() == 0 || data.promotions[0] is map)
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidSkuCatalogList(data) {
+      return data.keys().hasAll(['catalogs', 'updatedAt'])
+        && data.keys().hasOnly(['catalogs', 'updatedAt'])
+        && data.catalogs is list
+        && data.catalogs.size() <= 50
+        && (data.catalogs.size() == 0 || data.catalogs[0] is map)
+        && data.updatedAt is string && data.updatedAt.size() <= 64;
+    }
+
+    function isValidProductItem(data) {
+      return data.keys().hasAll(['sku', 'name'])
+        && data.keys().hasOnly(['sku', 'name', 'updatedAt'])
+        && data.sku is string && data.sku.size() <= 64
+        && data.name is string && data.name.size() <= 160
+        && isOptionalBoundedString(data, 'updatedAt', 64);
+    }
+
+    // Private User Profile (PII strictly owner-only, never listable)
     match /users/{userId} {
-      allow read: if isAuthenticated();
-      allow create: if isAuthenticated();
-      allow update: if isOwner(userId);
-      allow delete: if isOwner(userId);
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+      allow create: if isOwner(userId) && isValidId(userId) && isValidUserCreate(incoming());
+      allow update: if isOwner(userId) && isValidId(userId)
+        && isValidUserUpdate(incoming())
+        && incoming().uid == existing().uid
+        && (!('createdAt' in existing()) || incoming().createdAt == existing().createdAt)
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'email', 'displayName', 'firstName', 'lastName', 'phoneNumber',
+          'companyName', 'abn', 'streetAddress', 'houseNumber', 'country',
+          'acceptedTermsAt', 'jobRole', 'subscriptionTier', 'subscriptionStatus',
+          'aiGenerationsRemaining', 'aiMonthlyAllowance', 'aiTopUpCredits',
+          'unlimitedAi', 'canExportPdf', 'canAutoReslot', 'maxSkusAllowed',
+          'unlockedExports', 'trialExpiresAt', 'trialUsed', 'lastLoginAt'
+        ]);
+      allow delete: if isOwner(userId) && isValidId(userId);
     }
 
-    // User promotional plans
+    // User 52-week promotional plans subcollection
     match /users/{userId}/plans/{planId} {
-      allow read, write: if isAuthenticated();
+      allow get: if isOwner(userId) && isValidId(userId) && isValidId(planId);
+      allow list: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidId(planId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && isValidPromoPlan(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidId(planId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && isValidPromoPlan(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['promotions', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(planId);
     }
 
-    // User products catalog
-    match /users/{userId}/products/{productId} {
-      allow read, write: if isAuthenticated();
-    }
-
-    // User SKU ranges and multi-catalogs
+    // User SKU ranges & multi-catalogs subcollection
     match /users/{userId}/catalogs/{catalogId} {
-      allow read, write: if isAuthenticated();
+      allow get: if isOwner(userId) && isValidId(userId) && isValidId(catalogId);
+      allow list: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidId(catalogId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && isValidSkuCatalogList(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidId(catalogId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && isValidSkuCatalogList(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['catalogs', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(catalogId);
+    }
+
+    // User product items subcollection
+    match /users/{userId}/products/{productId} {
+      allow get: if isOwner(userId) && isValidId(userId) && isValidId(productId);
+      allow list: if isOwner(userId) && isValidId(userId);
+      allow create: if isOwner(userId) && isValidId(userId) && isValidId(productId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && isValidProductItem(incoming());
+      allow update: if isOwner(userId) && isValidId(userId) && isValidId(productId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && isValidProductItem(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['sku', 'name', 'updatedAt']);
+      allow delete: if isOwner(userId) && isValidId(userId) && isValidId(productId);
     }
   }
 }
-

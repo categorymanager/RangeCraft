@@ -1,7 +1,8 @@
 import React, { useState, useMemo } from 'react';
-import { WeekPromotion, Product, StrategyKPIs, ThemeMode, UserProfile } from '../types';
+import { AppTab, WeekPromotion, Product, StrategyKPIs, ThemeMode, UserProfile } from '../types';
 import { safeFetch } from '../utils/api';
 import { formatAud, formatNumber, formatPrice } from '../utils/formatters';
+import { WorkspacePageHero } from './WorkspacePageHero';
 import { 
   FileText, 
   Sparkles, 
@@ -38,6 +39,8 @@ interface ExecutiveReportViewProps {
   userProfile?: UserProfile | null;
   onUnlockExport?: (exportId: string, itemName: string, priceAud: number) => void;
   currentTheme?: ThemeMode;
+  onSelectTab?: (tab: AppTab) => void;
+  onOpenPricingModal?: () => void;
 }
 
 export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
@@ -49,6 +52,7 @@ export const ExecutiveReportView: React.FC<ExecutiveReportViewProps> = ({
   userProfile,
   onUnlockExport,
   currentTheme = 'light',
+  onSelectTab,
 }) => {
   const isLight = currentTheme.includes('light');
 
@@ -154,7 +158,7 @@ ${aiBriefing?.executiveThesis || `This commercial strategy delivers AUD $${Math.
 ## Key Strategic Objectives
 ${(aiBriefing?.keyObjectives || [
   `Deliver AUD $${Math.round(kpis.annualProjectedRevenueAud).toLocaleString()} promotional turnover at ${kpis.blendedPromoMarginPercent}% margin`,
-  'Ensure 100% ACCC 4-week regular price hiatus compliance across all categories',
+  'Ensure 100% Custom Rules 4-week regular price hiatus compliance across all categories',
   `Secure AUD $${Math.round(kpis.totalTradeSpendFundingAud || kpis.totalTradeSpendCoOpAud).toLocaleString()} in supplier co-op trade funding`
 ]).map((o: string) => `- ${o}`).join('\n')}
 
@@ -167,7 +171,7 @@ ${(aiBriefing?.keyObjectives || [
 
 ## Trade Spend & Governance
 ${aiBriefing?.tradeFundingStrategy || 'Tiered scan-down rebate and front-cover co-op investment framework to preserve net profit margin.'}
-${aiBriefing?.governanceAndCompliance || 'Strict enforcement of ACCC two-price comparison guidelines with mandatory 4-week regular price hiatus buffers.'}
+${aiBriefing?.governanceAndCompliance || 'Strict enforcement of Custom Rules two-price guidelines with mandatory 4-week regular price hiatus buffers.'}
 `.trim();
 
     try {
@@ -196,7 +200,7 @@ ${aiBriefing?.executiveThesis || `Comprehensive commercial overview outlining th
 ## 2. Key Objectives
 ${(aiBriefing?.keyObjectives || [
   `Deliver AUD $${Math.round(kpis.annualProjectedRevenueAud).toLocaleString()} promotional turnover`,
-  'Enforce strict ACCC compliance',
+  'Enforce strict Custom Rules hiatus compliance',
   'Optimize supplier co-op funding'
 ]).map((o: string) => `- ${o}`).join('\n')}
 
@@ -255,42 +259,89 @@ ${promotions.map(p => {
 
   return (
     <div className="space-y-6">
-      
+      {/* Centered Funnel Tool Hero */}
+      <div className="print:hidden">
+        <WorkspacePageHero
+          stepLabel="Step 4 of 5 · Buyer Pitch Studio"
+          title="Executive JBP Pitch Deck"
+          subtitle="Generate board-ready Joint Business Plans, supplier scan investment memos, and exportable retail deliverables."
+          accent="violet"
+          currentTheme={currentTheme}
+          activeStep={4}
+          onSelectTab={onSelectTab}
+          FallbackIcon={FileText}
+          actions={
+            <>
+              <button
+                type="button"
+                onClick={handleExportPdf}
+                className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Printer className="w-4 h-4" />
+                <span>{isUnlockedPdf ? 'Print / Save PDF' : 'Unlock PDF Report ($19)'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExportExcelPlanner}
+                className="min-h-[44px] inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer whitespace-nowrap"
+              >
+                <Download className="w-4 h-4" />
+                <span>{isUnlockedExcel ? 'Export Master Excel' : 'Unlock Excel Model ($19)'}</span>
+              </button>
+            </>
+          }
+        />
+      </div>
+
       {/* EXPORT PACKAGES CARDS & MICROCOPY */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm space-y-4 print:hidden">
+      <div className={`border rounded-3xl p-4 sm:p-5 shadow-sm space-y-4 print:hidden transition-colors ${
+        isLight
+          ? 'bg-white border-slate-200 text-slate-900'
+          : 'bg-[#111726] border-slate-800 text-slate-100'
+      }`}>
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <div>
-            <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-              <Download className="w-4 h-4 text-indigo-600" />
+            <h3 className={`text-sm font-black flex items-center gap-2 ${
+              isLight ? 'text-slate-900' : 'text-white'
+            }`}>
+              <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400 shrink-0" />
               <span>Commercial Strategy Export & Briefing Packages</span>
             </h3>
-            <p className="text-xs text-slate-500">
+            <p className={`text-xs ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
               Export presentation-ready assets for Joint Business Planning (JBP) and Category Review submissions.
             </p>
           </div>
-          <span className="text-[11px] font-bold px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 self-start sm:self-auto">
+          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border self-start sm:self-auto ${
+            isLight
+              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+              : 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30'
+          }`}>
             Included in Pro OR $19 One-Time Download
           </span>
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Card 1: PDF Briefing */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:border-indigo-300 transition-all flex flex-col justify-between space-y-3">
+          <div className={`p-4 rounded-2xl border hover:border-indigo-400/60 transition-all flex flex-col justify-between space-y-3 ${
+            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
+          }`}>
             <div>
-              <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1">
+              <div className={`flex items-center justify-between gap-2 text-xs font-bold mb-1 ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}>
                 <span className="flex items-center gap-1.5">
-                  <FileText className="w-4 h-4 text-indigo-600" />
+                  <FileText className="w-4 h-4 text-indigo-500 shrink-0" />
                   White-Label PDF Memo
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">{isUnlockedPdf ? 'UNLOCKED' : '$19 AUD'}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono shrink-0">{isUnlockedPdf ? 'UNLOCKED' : '$19 AUD'}</span>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
+              <p className={`text-[11px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 Formal executive strategy memorandum with custom branding and retailer channel terms.
               </p>
             </div>
             <button
               onClick={handleExportPdf}
-              className="w-full py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+              className="w-full min-h-[44px] py-2 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
             >
               {isUnlockedPdf ? <Printer className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
               <span>{isUnlockedPdf ? 'Download PDF Report' : 'Unlock PDF Report — $19'}</span>
@@ -298,22 +349,26 @@ ${promotions.map(p => {
           </div>
 
           {/* Card 2: Excel Trade Planner */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:border-indigo-300 transition-all flex flex-col justify-between space-y-3">
+          <div className={`p-4 rounded-2xl border hover:border-indigo-400/60 transition-all flex flex-col justify-between space-y-3 ${
+            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
+          }`}>
             <div>
-              <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1">
+              <div className={`flex items-center justify-between gap-2 text-xs font-bold mb-1 ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}>
                 <span className="flex items-center gap-1.5">
-                  <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-500 shrink-0" />
                   52-Week Master Excel
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">{isUnlockedExcel ? 'UNLOCKED' : '$19 AUD'}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono shrink-0">{isUnlockedExcel ? 'UNLOCKED' : '$19 AUD'}</span>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
+              <p className={`text-[11px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 Complete financial workbook with formulas, scan rebates, and volume elasticity curves.
               </p>
             </div>
             <button
               onClick={handleExportExcelPlanner}
-              className="w-full py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+              className="w-full min-h-[44px] py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
             >
               {isUnlockedExcel ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
               <span>{isUnlockedExcel ? 'Export Excel Planner' : 'Unlock Excel Planner — $19'}</span>
@@ -321,22 +376,26 @@ ${promotions.map(p => {
           </div>
 
           {/* Card 3: JBP Pitch Deck */}
-          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 hover:border-indigo-300 transition-all flex flex-col justify-between space-y-3">
+          <div className={`p-4 rounded-2xl border hover:border-indigo-400/60 transition-all flex flex-col justify-between space-y-3 ${
+            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
+          }`}>
             <div>
-              <div className="flex items-center justify-between text-xs font-bold text-slate-900 mb-1">
+              <div className={`flex items-center justify-between gap-2 text-xs font-bold mb-1 ${
+                isLight ? 'text-slate-900' : 'text-white'
+              }`}>
                 <span className="flex items-center gap-1.5">
-                  <Presentation className="w-4 h-4 text-amber-600" />
+                  <Presentation className="w-4 h-4 text-amber-500 shrink-0" />
                   Buyer JBP Pitch Deck
                 </span>
-                <span className="text-[10px] text-slate-500 font-mono">{isUnlockedDeck ? 'UNLOCKED' : '$19 AUD'}</span>
+                <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono shrink-0">{isUnlockedDeck ? 'UNLOCKED' : '$19 AUD'}</span>
               </div>
-              <p className="text-[11px] text-slate-500 leading-relaxed">
+              <p className={`text-[11px] leading-relaxed ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
                 Structured presentation deck for national supermarket and category commercial reviews.
               </p>
             </div>
             <button
               onClick={handleExportPitchDeck}
-              className="w-full py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
+              className="w-full min-h-[44px] py-2 px-3 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-sm"
             >
               {isUnlockedDeck ? <Download className="w-3.5 h-3.5" /> : <Lock className="w-3.5 h-3.5" />}
               <span>{isUnlockedDeck ? 'Export Pitch Deck' : 'Unlock Pitch Deck — $19'}</span>
@@ -345,19 +404,21 @@ ${promotions.map(p => {
         </div>
 
         {/* Trust Badges */}
-        <div className="pt-2 border-t border-slate-100 flex items-center justify-center gap-4 text-[11px] text-slate-500 font-semibold flex-wrap">
-          <span className="flex items-center gap-1 text-slate-700">
-            <Lock className="w-3 h-3 text-emerald-600" />
+        <div className={`pt-2 border-t flex items-center justify-center gap-3 sm:gap-4 text-[11px] font-semibold flex-wrap ${
+          isLight ? 'border-slate-100 text-slate-500' : 'border-slate-800 text-slate-400'
+        }`}>
+          <span className={`flex items-center gap-1 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+            <Lock className="w-3 h-3 text-emerald-500" />
             Secured by Stripe
           </span>
-          <span className="text-slate-300">•</span>
-          <span className="flex items-center gap-1 text-slate-700">
-            <Zap className="w-3 h-3 text-indigo-600" />
+          <span className="text-slate-300 dark:text-slate-700">•</span>
+          <span className={`flex items-center gap-1 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>
+            <Zap className="w-3 h-3 text-indigo-500" />
             Instant Download
           </span>
-          <span className="text-slate-300">•</span>
-          <span className="flex items-center gap-1 text-emerald-700">
-            <ShieldCheck className="w-3 h-3 text-emerald-600" />
+          <span className="text-slate-300 dark:text-slate-700">•</span>
+          <span className={`flex items-center gap-1 ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>
+            <ShieldCheck className="w-3 h-3 text-emerald-500" />
             100% Satisfaction Guarantee
           </span>
         </div>
@@ -570,7 +631,7 @@ ${promotions.map(p => {
           <div className={`text-left md:text-right text-xs print:text-slate-600 ${isLight ? 'text-slate-500' : 'text-slate-400'}`}>
             <div className="flex items-center md:justify-end gap-1 font-semibold text-emerald-500 print:text-black">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>ACCC Hiatus Verified (100% Compliant)</span>
+              <span>Custom Rules Verified (100% Compliant)</span>
             </div>
             <div className="mt-0.5">Author: <span className="font-semibold text-slate-700 dark:text-slate-200 print:text-black">{preparedBy}</span></div>
             <div className="text-[11px] opacity-75">Generated via RangeCraft AU Commercial Engine</div>
@@ -596,7 +657,7 @@ ${promotions.map(p => {
           <p className={`text-xs leading-relaxed font-medium print:text-black ${
             isLight ? 'text-slate-700' : 'text-slate-200'
           }`}>
-            {aiBriefing?.executiveThesis || `The ${targetYear} commercial promotional calendar establishes an authoritative, disciplined promotional cadence across ${retailerChannel}. Grounded in ${strategicObjective}, the model projects AUD $${Math.round(kpis.annualProjectedRevenueAud).toLocaleString()} in total promotional turnover, sustaining a healthy blended margin of ${kpis.blendedPromoMarginPercent}% while generating +${kpis.overallLiftPercent}% incremental volume lift. Strict ACCC two-price governance is automated with a mandatory 4-week hiatus.`}
+            {aiBriefing?.executiveThesis || `The ${targetYear} commercial promotional calendar establishes an authoritative, disciplined promotional cadence across ${retailerChannel}. Grounded in ${strategicObjective}, the model projects AUD $${Math.round(kpis.annualProjectedRevenueAud).toLocaleString()} in total promotional turnover, sustaining a healthy blended margin of ${kpis.blendedPromoMarginPercent}% while generating +${kpis.overallLiftPercent}% incremental volume lift. Strict Custom Rules pricing governance is automated with a mandatory 4-week hiatus.`}
           </p>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
@@ -614,7 +675,7 @@ ${promotions.map(p => {
                 {(aiBriefing?.keyObjectives || [
                   `Deliver AUD $${Math.round(kpis.annualProjectedRevenueAud).toLocaleString()} in promotional revenue at ${kpis.blendedPromoMarginPercent}% blended margin.`,
                   'Capture high seasonal demand peaks across Australia Day, Easter, EOFY, Footy Finals, Black Friday, and Christmas.',
-                  'Enforce 100% compliance with ACCC 4-week regular price selling hiatus rules.',
+                  'Enforce 100% compliance with Custom Rules 4-week regular price selling hiatus intervals.',
                   `Secure AUD $${Math.round(kpis.totalTradeSpendFundingAud || kpis.totalTradeSpendCoOpAud).toLocaleString()} in supplier trade spend rebates to preserve retailer net margins.`
                 ]).map((obj: string, i: number) => (
                   <li key={i}>{obj}</li>
@@ -799,17 +860,17 @@ ${promotions.map(p => {
               </div>
             </div>
 
-            {/* ACCC Governance */}
+            {/* Custom Rules Governance */}
             <div className={`p-4 rounded-xl border space-y-3 flex flex-col justify-between print:bg-slate-100 print:border-slate-300 ${
               isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950 border-slate-800'
             }`}>
               <div className="space-y-2">
                 <div className="font-bold text-slate-900 dark:text-white print:text-black flex items-center gap-1.5">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
-                  ACCC Pricing & Catalogue Hiatus Governance
+                  Custom Rules &amp; Catalogue Hiatus Governance
                 </div>
                 <p className={`text-[11px] leading-relaxed ${isLight ? 'text-slate-600' : 'text-slate-300'}`}>
-                  {aiBriefing?.governanceAndCompliance || "ACCC Guidelines for Two-Price and Was/Now Comparisons are strictly enforced. All SKUs featured in promotional catalogues undergo mandatory 4-week regular price selling periods to maintain genuine reference pricing integrity and prevent consumer deception."}
+                  {aiBriefing?.governanceAndCompliance || "Custom Rules for Two-Price and Was/Now Comparisons are strictly enforced. All SKUs featured in promotional catalogues undergo mandatory 4-week regular price selling periods to maintain genuine reference pricing integrity and protect gross margin."}
                 </p>
               </div>
 
@@ -818,10 +879,10 @@ ${promotions.map(p => {
               }`}>
                 <div className="font-bold flex items-center gap-1.5">
                   <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-                  ACCC Hiatus Audit Status: PASSED (Zero Active Clashes)
+                  Custom Rules Audit Status: PASSED (Zero Active Clashes)
                 </div>
                 <div className="text-[10px] opacity-90">
-                  Every product feature satisfies Australian Consumer Law reference pricing standards.
+                  Every product feature satisfies configured hiatus and margin protection standards.
                 </div>
               </div>
             </div>
@@ -836,16 +897,16 @@ ${promotions.map(p => {
             </h3>
 
             {/* Interactive Filters (Hidden in print) */}
-            <div className="flex items-center gap-2 flex-wrap print:hidden">
+            <div className="flex flex-col sm:flex-row sm:items-center gap-2 print:hidden w-full sm:w-auto">
               {/* Quarter Filter Pills */}
-              <div className={`flex items-center p-1 rounded-xl border text-xs font-semibold ${
+              <div className={`flex items-center p-1 rounded-xl border text-xs font-semibold overflow-x-auto no-scrollbar max-w-full ${
                 isLight ? 'bg-slate-100 border-slate-300' : 'bg-slate-950 border-slate-800'
               }`}>
                 {(['all', 'Q1', 'Q2', 'Q3', 'Q4'] as const).map(q => (
                   <button
                     key={q}
                     onClick={() => setSelectedQuarter(q)}
-                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                    className={`min-h-[36px] px-2.5 py-1 rounded-lg transition-all cursor-pointer shrink-0 ${
                       selectedQuarter === q 
                         ? 'bg-amber-500 text-white font-bold shadow-sm' 
                         : isLight 
@@ -858,37 +919,39 @@ ${promotions.map(p => {
                 ))}
               </div>
 
-              {/* Search input */}
-              <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search campaign, SKU..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={`pl-8 pr-3 py-1 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 w-44 ${
+              <div className="flex items-center gap-2 w-full sm:w-auto">
+                {/* Search input */}
+                <div className="relative flex-1 sm:flex-none min-w-0">
+                  <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search campaign, SKU..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className={`pl-8 pr-3 py-2 sm:py-1.5 rounded-lg border text-xs focus:outline-none focus:ring-1 focus:ring-amber-500 w-full sm:w-48 min-h-[40px] sm:min-h-0 ${
+                      isLight 
+                        ? 'bg-slate-50 border-slate-300 text-slate-900' 
+                        : 'bg-slate-950 border-slate-700 text-slate-100'
+                    }`}
+                  />
+                </div>
+
+                {/* Sort By */}
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className={`px-2.5 py-2 sm:py-1.5 rounded-lg border text-xs font-medium focus:outline-none min-h-[40px] sm:min-h-0 max-w-[160px] truncate ${
                     isLight 
                       ? 'bg-slate-50 border-slate-300 text-slate-900' 
                       : 'bg-slate-950 border-slate-700 text-slate-100'
                   }`}
-                />
+                >
+                  <option value="week">Sort: Week (1-52)</option>
+                  <option value="revenue">Sort: Revenue (High-Low)</option>
+                  <option value="margin">Sort: Margin % (High-Low)</option>
+                  <option value="units">Sort: Volume Units</option>
+                </select>
               </div>
-
-              {/* Sort By */}
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className={`px-2.5 py-1 rounded-lg border text-xs font-medium focus:outline-none ${
-                  isLight 
-                    ? 'bg-slate-50 border-slate-300 text-slate-900' 
-                    : 'bg-slate-950 border-slate-700 text-slate-100'
-                }`}
-              >
-                <option value="week">Sort: Week (1-52)</option>
-                <option value="revenue">Sort: Revenue (High-Low)</option>
-                <option value="margin">Sort: Margin % (High-Low)</option>
-                <option value="units">Sort: Volume Units</option>
-              </select>
             </div>
           </div>
 

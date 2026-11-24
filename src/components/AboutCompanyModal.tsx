@@ -15,12 +15,14 @@ import {
   Lock,
   Globe
 } from 'lucide-react';
-import { ThemeMode } from '../types';
+import { ThemeMode, UserProfile } from '../types';
+import { canClaimFreeTrial, hasActivePaidSubscription } from '../utils/entitlements';
 
 interface AboutCompanyModalProps {
   isOpen: boolean;
   onClose: () => void;
   currentTheme: ThemeMode;
+  userProfile?: UserProfile | null;
   onOpenFreeTrial: () => void;
 }
 
@@ -28,9 +30,12 @@ export const AboutCompanyModal: React.FC<AboutCompanyModalProps> = ({
   isOpen,
   onClose,
   currentTheme,
+  userProfile,
   onOpenFreeTrial,
 }) => {
   const isLight = currentTheme.includes('light');
+  const trialEligible = canClaimFreeTrial(userProfile);
+  const isPaidActive = hasActivePaidSubscription(userProfile);
   const [demoName, setDemoName] = useState('');
   const [demoEmail, setDemoEmail] = useState('');
   const [demoCompany, setDemoCompany] = useState('');
@@ -45,36 +50,39 @@ export const AboutCompanyModal: React.FC<AboutCompanyModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in overflow-y-auto">
-      <div className={`relative w-full max-w-3xl my-8 rounded-3xl border shadow-2xl overflow-hidden transition-all ${
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-fade-in">
+      <div className={`relative w-full h-[100dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-3xl rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl flex flex-col overflow-hidden transition-all ${
         isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1422] border-[#1e2638] text-white'
       }`}>
-        {/* Header */}
-        <div className="p-6 border-b border-slate-800/80 flex items-center justify-between bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/25">
+        {/* Fixed Top Close Bar */}
+        <div className={`shrink-0 px-4 py-3.5 sm:px-6 sm:py-5 border-b flex items-center justify-between gap-3 bg-gradient-to-r from-blue-600/10 via-indigo-600/10 to-transparent ${
+          isLight ? 'border-slate-200' : 'border-slate-800/80'
+        }`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-black shadow-lg shadow-blue-500/25 shrink-0">
               AU
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-xl font-black">About RangeCraft & Omni-Trade AU</h2>
-                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30">
-                  Est. 2024 • Melbourne & Sydney
-                </span>
-              </div>
-              <p className="text-xs text-slate-400">Enterprise Retail Promotional Strategy & Omni-Trade CRM Platform</p>
+            <div className="min-w-0">
+              <h2 className="text-base sm:text-xl font-black truncate">About RangeCraft & Omni-Trade AU</h2>
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
+                Est. 2024 · Melbourne & Sydney · Enterprise Retail Strategy Platform
+              </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Close about modal"
+            className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl transition-colors cursor-pointer shrink-0 ${
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Content Body */}
-        <div className="p-6 sm:p-8 space-y-8 max-h-[80vh] overflow-y-auto">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-8 space-y-8">
           {/* Mission & Purpose */}
           <div className="space-y-3">
             <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-blue-400">
@@ -95,15 +103,15 @@ export const AboutCompanyModal: React.FC<AboutCompanyModalProps> = ({
               <div className="w-9 h-9 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 mb-3">
                 <ShieldCheck className="w-5 h-5" />
               </div>
-              <h4 className="text-sm font-bold mb-1">ACCC Hiatus Enforced</h4>
-              <p className="text-xs text-slate-400">Built-in algorithmic validation for the mandatory Australian 4-week promotional hiatus rule.</p>
+              <h4 className="text-sm font-bold mb-1">Custom Rules Enforced</h4>
+              <p className="text-xs text-slate-400">Built-in algorithmic validation for configurable 4-week promotional hiatus spacing and margin floors.</p>
             </div>
 
             <div className={`p-4 rounded-2xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/80 border-slate-800'}`}>
               <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 mb-3">
                 <Sparkles className="w-5 h-5" />
               </div>
-              <h4 className="text-sm font-bold mb-1">Google-Grade Gemini AI</h4>
+              <h4 className="text-sm font-bold mb-1">Commercial Forecast Engine</h4>
               <p className="text-xs text-slate-400">Simulate price elasticity, scan rebates, and volume lifts across 52 annual promotional cycles.</p>
             </div>
 
@@ -130,7 +138,7 @@ export const AboutCompanyModal: React.FC<AboutCompanyModalProps> = ({
               </div>
               <div>
                 <div className="text-2xl sm:text-3xl font-black font-mono text-purple-400">0</div>
-                <div className="text-xs text-slate-400 mt-0.5">ACCC Hiatus Breaches</div>
+                <div className="text-xs text-slate-400 mt-0.5">Custom Rule Breaches</div>
               </div>
               <div>
                 <div className="text-2xl sm:text-3xl font-black font-mono text-amber-400">3.8x</div>
@@ -157,7 +165,11 @@ export const AboutCompanyModal: React.FC<AboutCompanyModalProps> = ({
                   }}
                   className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold shadow-md cursor-pointer"
                 >
-                  Start 14-Day Free Trial While You Wait
+                  {isPaidActive
+                    ? 'View Plan & Billing'
+                    : trialEligible
+                    ? 'Start 14-Day Free Trial While You Wait'
+                    : 'View Plans & Upgrade'}
                 </button>
               </div>
             ) : (

@@ -108,8 +108,6 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
   if (!isOpen) return null;
 
   const currentPrice = selectedPlan === 'pro_subscription' ? proPriceVal : singlePriceVal;
-  const gstAmount = Number((currentPrice * 0.1).toFixed(2));
-  const subtotal = Number((currentPrice - gstAmount).toFixed(2));
 
   const triggerRealDownload = () => {
     try {
@@ -176,8 +174,6 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
           invoiceId: `INV-AU-${Math.floor(100000 + Math.random() * 900000)}`,
           date: new Date().toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }),
           amountPaid: currentPrice,
-          gst: gstAmount,
-          subtotal,
           method: 'Stripe AU 256-Bit SSL',
           customer: cardholderName,
           email
@@ -226,8 +222,6 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
           invoiceId: data.invoiceId || `INV-AU-${Math.floor(100000 + Math.random() * 900000)}`,
           date: new Date().toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' }),
           amountPaid: currentPrice,
-          gst: gstAmount,
-          subtotal,
           method: 'Stripe Direct Card (Encrypted)',
           customer: cardholderName,
           email
@@ -249,34 +243,38 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh]">
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-xl bg-white h-[100dvh] sm:h-auto sm:max-h-[92dvh] rounded-none sm:rounded-3xl shadow-2xl border-0 sm:border border-slate-200 overflow-hidden flex flex-col">
         
         {/* Header with Enterprise Dark Theme */}
-        <div className="bg-slate-900 text-white p-6 relative">
+        <div className="bg-slate-900 text-white p-4 sm:p-6 flex items-start justify-between gap-3 shrink-0">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
+              <ShieldCheck className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span className="truncate">Stripe 256-Bit Encrypted Payment Gateway</span>
+            </div>
+
+            <h2 className="text-lg sm:text-xl font-black tracking-tight">
+              {isSuccess ? 'Payment Approved & Deliverable Ready!' : 'Commercial License & Deliverable Checkout'}
+            </h2>
+            <p className="text-xs text-slate-300 mt-0.5">
+              Instant unredacted Excel (.xlsx) & PDF deliverables aligned with Custom Rules.
+            </p>
+          </div>
+
           <button
+            type="button"
             onClick={onClose}
-            className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Close checkout"
+            className="min-h-[44px] min-w-[44px] rounded-full text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
-
-          <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-400 uppercase tracking-wider mb-1">
-            <ShieldCheck className="w-4 h-4 text-emerald-400" />
-            <span>Stripe 256-Bit Encrypted Payment Gateway</span>
-          </div>
-
-          <h2 className="text-xl font-black tracking-tight">
-            {isSuccess ? 'Payment Approved & Deliverable Ready!' : 'Commercial License & Deliverable Checkout'}
-          </h2>
-          <p className="text-xs text-slate-300 mt-0.5">
-            Instant unredacted Excel (.xlsx) & PDF deliverables compliant with Australian Consumer Law.
-          </p>
         </div>
 
         {isSuccess ? (
           /* Success Screen with Instant Real Download & Tax Invoice */
-          <div className="p-6 sm:p-8 text-center space-y-5 overflow-y-auto">
+          <div className="p-6 sm:p-8 text-center space-y-5 overflow-y-auto overscroll-contain flex-1 min-h-0">
             <div className="w-16 h-16 rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center mx-auto shadow-inner">
               <CheckCircle2 className="w-9 h-9 text-emerald-600" />
             </div>
@@ -324,8 +322,8 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                 </div>
               </div>
               <div className="pt-2 border-t border-slate-200 flex justify-between items-center text-xs">
-                <span className="text-slate-600">Subtotal ({format(subtotal)}) + 10% GST ({format(gstAmount)}):</span>
-                <span className="font-black text-emerald-600 text-sm">{format(currentPrice)} {currency}</span>
+                <span className="text-slate-600">Total Paid (inc. GST):</span>
+                <span className="font-black text-emerald-600 text-sm">{format(currentPrice)} {currency} inc. GST</span>
               </div>
             </div>
 
@@ -365,7 +363,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                 }`}
               >
                 <div className="text-[11px] text-slate-500 font-normal">Single Deliverable</div>
-                <div className="text-base font-black text-slate-900">{format(singlePriceVal)} {currency}</div>
+                <div className="text-base font-black text-slate-900">{format(singlePriceVal)} {currency} <span className="text-[10px] font-normal text-slate-500">inc. GST</span></div>
                 <div className="text-[10px] text-slate-400 mt-0.5">One-time unredacted file</div>
               </button>
 
@@ -382,8 +380,8 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                   <Zap className="w-2.5 h-2.5 fill-slate-950" /> Best Value
                 </span>
                 <div className={selectedPlan === 'pro_subscription' ? 'text-blue-100 text-[11px] font-normal' : 'text-slate-500 text-[11px] font-normal'}>Commercial Pro</div>
-                <div className="text-base font-black">{format(proPriceVal)} {currency} <span className="text-[10px] font-normal opacity-80">/ mo</span></div>
-                <div className={selectedPlan === 'pro_subscription' ? 'text-blue-100 text-[10px] mt-0.5' : 'text-slate-400 text-[10px] mt-0.5'}>Unlimited all 52 weeks & AI</div>
+                <div className="text-base font-black">{format(proPriceVal)} {currency} <span className="text-[10px] font-normal opacity-80">/ mo inc. GST</span></div>
+                <div className={selectedPlan === 'pro_subscription' ? 'text-blue-100 text-[10px] mt-0.5' : 'text-slate-400 text-[10px] mt-0.5'}>Unlimited all 52 weeks & insights</div>
               </button>
             </div>
 
@@ -395,15 +393,15 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                 </span>
                 <span className="text-[11px] text-slate-500 block leading-relaxed">
                   {selectedPlan === 'pro_subscription' 
-                    ? 'Includes full 52-week Southern Hemisphere calendar, SKU deletion audits & unlimited JBP/XLSX exports.'
-                    : 'Instant one-time unredacted commercial download with full formulas & ACCC compliance notes.'}
+                    ? 'Includes full 52-week promotional calendar, SKU deletion audits & unlimited JBP/XLSX exports.'
+                    : 'Instant one-time unredacted commercial download with full formulas & Custom Rules compliance notes.'}
                 </span>
               </div>
               <div className="text-right shrink-0">
                 <span className="text-lg font-black text-slate-900">
                   {format(currentPrice)} {currency}
                 </span>
-                <span className="block text-[10px] text-slate-500 font-medium">inc. {format(gstAmount)} GST</span>
+                <span className="block text-[10px] text-slate-500 font-medium">inc. GST</span>
               </div>
             </div>
 
@@ -439,7 +437,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                 }`}
               >
                 <ExternalLink className="w-3.5 h-3.5" />
-                <span>Stripe Hosted Checkout (Apple / Google Pay)</span>
+                <span>Stripe Hosted Checkout (Card)</span>
               </button>
             </div>
 
@@ -452,7 +450,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                     Official Stripe Checkout Gateway
                   </p>
                   <p className="text-slate-700 text-[11px] leading-relaxed">
-                    You will be securely redirected to Stripe's hosted checkout page to complete your payment with Apple Pay, Google Pay, or Credit Card.
+                    You will be securely redirected to Stripe's hosted checkout page to complete your payment with your Credit or Debit Card.
                   </p>
                 </div>
 
@@ -498,7 +496,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      <span>Launch Stripe Checkout (${currentPrice}.00 AUD)</span>
+                      <span>Launch Stripe Checkout ({format(currentPrice)} {currency} inc. GST)</span>
                       <ChevronRight className="w-4 h-4 ml-1 opacity-80" />
                     </>
                   )}
@@ -615,7 +613,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                   ) : (
                     <>
                       <Lock className="w-4 h-4" />
-                      <span>Pay ${currentPrice}.00 AUD & Instant Download</span>
+                      <span>Pay {format(currentPrice)} {currency} inc. GST & Download</span>
                       <ChevronRight className="w-4 h-4 ml-1 opacity-80" />
                     </>
                   )}

@@ -391,7 +391,7 @@ export const PromotionDensityHeatmap: React.FC<PromotionDensityHeatmapProps> = (
                         {hasClash && (
                           <div className="flex items-center gap-1 text-[9px] text-rose-300 font-bold mt-1">
                             <AlertTriangle className="w-3 h-3 text-rose-400 shrink-0" />
-                            <span>ACCC Alert</span>
+                            <span>Rule Alert</span>
                           </div>
                         )}
                       </div>

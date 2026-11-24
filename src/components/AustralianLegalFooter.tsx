@@ -36,7 +36,7 @@ export function AustralianLegalFooter() {
           <div className="space-y-2.5">
             <h4 className="text-slate-200 font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
               <Scale className="w-3.5 h-3.5 text-blue-400" />
-              Australian Regulatory Compliance
+              Promotional Governance &amp; Rules
             </h4>
             <ul className="space-y-1.5 text-[11px]">
               <li>
@@ -44,7 +44,7 @@ export function AustralianLegalFooter() {
                   onClick={() => openModal('accc')}
                   className="hover:text-blue-400 transition-colors text-left flex items-center gap-1 cursor-pointer"
                 >
-                  <span>• ACCC Two-Price & "Was/Now" Rules</span>
+                  <span>• Custom Rules &amp; Two-Price Standards</span>
                 </button>
               </li>
               <li>
@@ -52,7 +52,7 @@ export function AustralianLegalFooter() {
                   onClick={() => openModal('accc')}
                   className="hover:text-blue-400 transition-colors text-left flex items-center gap-1 cursor-pointer"
                 >
-                  <span>• 4-Week Promotional Hiatus Standard</span>
+                  <span>• Custom 4-Week Promotional Hiatus Rule</span>
                 </button>
               </li>
               <li>
@@ -100,7 +100,7 @@ export function AustralianLegalFooter() {
                 Stripe 256-Bit SSL Encrypted
               </div>
               <p className="text-slate-400 text-[10px] leading-tight">
-                All micro-checkouts and subscriptions are billed in Australian Dollars (AUD) inclusive of 10% GST where applicable.
+                All micro-checkouts and subscriptions are billed in Australian Dollars (AUD), single price inc. GST.
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -142,7 +142,7 @@ export function AustralianLegalFooter() {
           <div className="flex items-center gap-4 text-xs font-semibold">
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 text-emerald-400 border border-slate-700 text-[10px]">
               <CheckCircle2 className="w-3 h-3" />
-              ACCC 2026 Compliant
+              Custom Rules Verified
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 text-blue-400 border border-slate-700 text-[10px]">
               <ShieldCheck className="w-3 h-3" />
@@ -189,7 +189,7 @@ export function AustralianLegalFooter() {
                     : 'border-transparent text-slate-600 hover:text-slate-900'
                 }`}
               >
-                ACCC Compliance
+                Custom Rules Engine
               </button>
               <button
                 onClick={() => setActiveLegalModal('terms')}
@@ -230,18 +230,18 @@ export function AustralianLegalFooter() {
                   <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl text-blue-900 font-semibold flex items-start gap-2">
                     <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                     <div>
-                      <span>Mandatory 4-Week Promotional Hiatus Algorithm: </span>
+                      <span>Configurable Promotional Hiatus Rules: </span>
                       <span className="font-normal">
-                        All promotional calculations strictly enforce Australian Consumer Law guidelines against misleading two-price comparisons (Sections 18 and 29 of the ACL).
+                        All promotional schedules enforce configurable spacing, margin floor, and two-price promotional integrity rules.
                       </span>
                     </div>
                   </div>
-                  <h4 className="font-bold text-slate-900 text-sm">Two-Price & "Was/Now" Advertising Standard</h4>
+                  <h4 className="font-bold text-slate-900 text-sm">Promotional Hiatus &amp; Price Integrity Standard</h4>
                   <p>
-                    Under the <em>Competition and Consumer Act 2010 (Cth)</em>, retailers and suppliers must not advertise a discounted price in comparison to a "Was" or regular price unless the item was genuinely offered for sale at the higher price for a reasonable, uninterrupted period immediately prior to the promotion.
+                    Suppliers and retail category teams must ensure discounted promotional prices maintain sufficient non-promoted baseline weeks so regular RRPs remain credible and margins stay protected.
                   </p>
                   <p>
-                    RangeCraft automatically audits your 52-week schedule and flags any promotion scheduled within 4 weeks of a previous discount on the same SKU or category, ensuring 100% regulatory compliance before buyer presentation.
+                    RangeCraft automatically audits your 52-week schedule against your Custom Rules thresholds and flags any promotion scheduled within 4 weeks of a previous discount on the same SKU or category.
                   </p>
                 </>
               )}
@@ -280,7 +280,7 @@ export function AustralianLegalFooter() {
                   </p>
                   <h4 className="font-bold text-slate-900 text-sm">Instant Delivery Guarantee</h4>
                   <p>
-                    Upon completion of a single export unlock ($19 AUD) or Pro Subscription ($39 AUD/mo), digital assets are generated dynamically and delivered directly to your browser for immediate offline use.
+                    Upon completion of a single export unlock ($19 AUD inc. GST) or Growth Subscription ($149 AUD/mo inc. GST), digital assets are generated dynamically and delivered directly to your browser for immediate offline use.
                   </p>
                 </>
               )}

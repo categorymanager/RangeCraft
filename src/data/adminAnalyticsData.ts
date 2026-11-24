@@ -187,7 +187,7 @@ export const INITIAL_CREATOR_TRANSACTIONS: CreatorTransaction[] = [
     userEmail: 'dave@pacificsnackworks.com',
     userName: 'David Kelly',
     companyName: 'Pacific Snackworks Pty Ltd',
-    itemDescription: 'ACCC 4-Week Hiatus Compliance Audit & Certification',
+    itemDescription: 'Custom Rule 4-Week Hiatus Compliance Audit & Certification',
     itemType: 'service_accc_audit',
     amountAud: 450,
     paymentMethod: 'paypal',
@@ -289,40 +289,43 @@ export const INITIAL_CREATOR_PAYOUTS: CreatorPayoutRecord[] = [
 
 export const ONE_OFF_SERVICES = [
   {
-    id: 'service_jbp_review' as const,
-    title: '1-on-1 Australian Retail JBP Review & Pitch Deck Audit',
-    priceAud: 899,
-    turnaround: '48-Hour Express',
-    description: 'Direct category strategy review by Australian FMCG experts. We audit your promotional depth, scan funding model, and craft a buyer-ready slide presentation for major supermarket channels.',
+    id: 'service_custom_import' as const,
+    stepBadge: 'STEP 1 · START HERE',
+    title: 'Product Catalogue & Data Setup',
+    priceAud: 299,
+    turnaround: 'Same-Day Setup',
+    description: 'Get your product range, unit costs, wholesale prices, and retail RRPs cleanly formatted and loaded into RangeCraft first—so your promotional planner and margin numbers work right away.',
     deliverables: [
-      'Comprehensive margin & scan funding spreadsheet audit',
-      'ACCC 4-Week Hiatus compliance certificate',
-      'Buyer pitch deck (Keynote/PowerPoint + PDF)',
-      '1-hour live strategy advisory video call'
+      'Clean formatting from Excel, Shopify, POS, or ERP exports',
+      'Landed cost, wholesale margin, and retail RRP mapping',
+      'Category, seasonality, and promotional tag setup'
     ]
   },
   {
     id: 'service_accc_audit' as const,
-    title: 'ACCC 4-Week Hiatus Compliance Audit & Verification',
+    stepBadge: 'STEP 2 · SCHEDULE CHECK',
+    title: 'Promotional Schedule & Rule Audit',
     priceAud: 450,
     turnaround: '24-Hour Turnaround',
-    description: 'Full statutory verification ensuring all 52 promotional weeks comply with Australian Consumer Law Section 18/29 normal selling price hiatus rules.',
+    description: 'Ensure all 52 weeks pass custom promotional frequency, gap, and category clash rules before submitting promotional forms to national supermarkets.',
     deliverables: [
-      'Statutory 52-week calendar compliance report',
-      'Baseline gap verification for major grocery channels',
-      'Audit certificate for retailer legal sign-off'
+      'Full 52-week gap & promotional frequency check',
+      'Product overlap and category cannibalisation fix',
+      'Schedule sign-off pack ready for retail submissions'
     ]
   },
   {
-    id: 'service_custom_import' as const,
-    title: 'Custom ERP / POS Catalog Database Onboarding',
-    priceAud: 299,
-    turnaround: 'Same-Day Setup',
-    description: 'White-glove data migration service. We take your SAP, NetSuite, Pronto, Cin7, or Shopify CSV export and format it for RangeCraft with custom category tags.',
+    id: 'service_jbp_review' as const,
+    stepBadge: 'STEP 3 · BUYER READY',
+    title: 'Retail Buyer Pitch & JBP Review',
+    priceAud: 899,
+    turnaround: '48-Hour Express',
+    description: '1-on-1 commercial review of your promotional depth, scan rebates, and Joint Business Plan presentation so your numbers stand up in front of supermarket and retail category buyers.',
     deliverables: [
-      'Full catalog cleanup and hierarchy structuring',
-      'Baseline sales velocity calibration',
-      'Custom seasonal tag configuration'
+      'Margin, co-op spend, and scan rebate model check',
+      'Conflict-free promotional schedule alignment',
+      'Buyer-ready presentation deck (PowerPoint + PDF)',
+      '1-hour live commercial review video call'
     ]
   }
 ];

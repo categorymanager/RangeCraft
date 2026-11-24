@@ -24,7 +24,7 @@ import {
   FileCheck,
   Zap
 } from 'lucide-react';
-import { UserProfile, CrmAccount, CrmDeal, WeekPromotion, ThemeMode } from '../types';
+import { UserProfile, CrmAccount, CrmDeal, WeekPromotion, ThemeMode, CheckoutPlanType } from '../types';
 import { formatAud } from '../utils/formatters';
 
 interface BillingInvoicesHubProps {
@@ -35,6 +35,14 @@ interface BillingInvoicesHubProps {
   currentTheme?: ThemeMode;
   onUpgradeSuccess: (updatedProfile: UserProfile) => void;
   onLogTransaction: (itemDescription: string, itemType: any, amountAud: number, paymentMethod: 'paypal' | 'credit_card' | 'bank_transfer', paypalTxnId?: string) => void;
+  onStartCheckout?: (opts: {
+    exportId: string;
+    itemName: string;
+    priceAud: number;
+    planType: CheckoutPlanType;
+    billingCycle?: 'monthly' | 'annual';
+    excludesGst?: boolean;
+  }) => void;
   showToast: (msg: string, type?: 'success' | 'info') => void;
 }
 
@@ -68,10 +76,10 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
   user,
   accounts,
   deals,
-  promotions,
-  currentTheme,
+  currentTheme = 'light',
   onUpgradeSuccess,
   onLogTransaction,
+  onStartCheckout,
   showToast
 }) => {
   const isLight = currentTheme.includes('light');
@@ -81,7 +89,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
   const [companyAbn, setCompanyAbn] = useState('45 809 237 194');
   const [companyAddress, setCompanyAddress] = useState('Level 14, 459 Collins Street, Melbourne VIC 3000');
   const [showPayModal, setShowPayModal] = useState(false);
-  const [payTarget, setPayTarget] = useState<'pro_planner' | 'enterprise_tier' | null>(null);
+  const [payTarget, setPayTarget] = useState<'starter_plan' | 'pro_planner' | 'enterprise_tier' | null>(null);
   
   // Checkout Form State
   const [cardHolder, setCardHolder] = useState(user?.displayName || '');
@@ -233,45 +241,49 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
     setCheckoutStatus('authorizing');
 
     setTimeout(() => {
-      // Create new platform invoice
-      const targetPlan = payTarget === 'pro_planner' ? 'Commercial Pro' : 'Enterprise Portfolio';
-      const calculatedCost = payTarget === 'pro_planner' ? 149 : 499;
-      const calculatedGst = calculatedCost * 0.1;
+      const targetPlan =
+        payTarget === 'starter_plan'
+          ? 'Starter Plan'
+          : payTarget === 'pro_planner'
+          ? 'Pro Plan'
+          : 'Enterprise Portfolio';
+      const calculatedCost = payTarget === 'starter_plan' ? 59 : payTarget === 'pro_planner' ? 149 : 450;
 
       const newInv: PlatformInvoice = {
         id: `INV-2026-0${platformInvoices.length + 1}`,
         date: new Date().toISOString().slice(0, 10),
         dueDate: new Date().toISOString().slice(0, 10),
-        itemDescription: `${targetPlan} Monthly Subscription Upgrade`,
+        itemDescription: `${targetPlan} Monthly Subscription Upgrade (inc. GST)`,
         amountAud: calculatedCost,
         paymentMethod: paymentGatewaySelected === 'credit_card' ? 'credit_card' : 'paypal',
         status: 'Paid',
         abn: checkoutAbn,
-        gstAmount: parseFloat(calculatedGst.toFixed(2))
+        gstAmount: Number((calculatedCost / 11).toFixed(2))
       };
 
       setPlatformInvoices(prev => [newInv, ...prev]);
-      
-      // Call standard state synchronizers
+
       const simulatedPaypalId = paymentGatewaySelected === 'paypal' ? `PP-AU-${Math.floor(10000000 + Math.random() * 90000000)}` : undefined;
       onLogTransaction(
-        `${targetPlan} Subscription (Invoiced Upgrade)`,
+        `${targetPlan} Subscription (Invoiced Upgrade, inc. GST)`,
         'subscription_monthly',
         calculatedCost,
         paymentGatewaySelected === 'credit_card' ? 'credit_card' : 'paypal',
         simulatedPaypalId
       );
 
-      // Perform actual simulated state modification
+      const isEnterprise = payTarget === 'enterprise_tier';
+      const isStarter = payTarget === 'starter_plan';
       const updatedProfile: UserProfile = {
         ...user,
         subscriptionTier: payTarget,
         subscriptionStatus: 'active',
-        unlimitedAi: true,
+        unlimitedAi: isEnterprise,
         canExportPdf: true,
-        canAutoReslot: true,
-        maxSkusAllowed: payTarget === 'enterprise_tier' ? 5000 : 1000,
-        aiGenerationsRemaining: 999999,
+        canAutoReslot: !isStarter,
+        maxSkusAllowed: isEnterprise ? 5000 : isStarter ? 150 : 1000,
+        aiGenerationsRemaining: isEnterprise ? 999999 : isStarter ? 30 : 150,
+        aiMonthlyAllowance: isEnterprise ? 999999 : isStarter ? 30 : 150,
         companyName: user.companyName || 'Active Commercial Partner'
       };
 
@@ -289,7 +301,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
         setCardCvv('');
       }, 1000);
 
-    }, 2500);
+    }, 1500);
   };
 
   const handleGenerateTradeInvoice = (e: React.FormEvent) => {
@@ -328,25 +340,29 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+              <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded border ${
+                isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+              }`}>
                 Secure Finance Control
               </span>
-              <span className="text-xs text-slate-400 font-mono">100% Tax Compliant</span>
+              <span className="text-xs text-slate-500 font-mono">100% ATO GST Compliant</span>
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight mt-0.5">
+            <h2 className={`text-xl sm:text-2xl font-black tracking-tight mt-0.5 ${isLight ? 'text-slate-900' : 'text-white'}`}>
               Secure Payments, GST Invoicing & Co-Op Billing Hub
             </h2>
           </div>
         </div>
 
         {/* Tab Selection */}
-        <div className="flex items-center bg-slate-950 p-1 rounded-2xl border border-slate-800 text-xs font-bold">
+        <div className={`flex items-center p-1 rounded-2xl border text-xs font-bold ${
+          isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-950 border-slate-800'
+        }`}>
           <button
             onClick={() => setActiveTab('my_billing')}
             className={`px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
               activeTab === 'my_billing'
-                ? 'bg-blue-600 text-white shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-indigo-600 text-white shadow-xs'
+                : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <CreditCard className="w-4 h-4" />
@@ -356,8 +372,8 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
             onClick={() => setActiveTab('co_op_billing')}
             className={`px-4 py-2 rounded-xl transition-all cursor-pointer flex items-center gap-2 ${
               activeTab === 'co_op_billing'
-                ? 'bg-emerald-600 text-white shadow'
-                : 'text-slate-400 hover:text-slate-200'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : isLight ? 'text-slate-600 hover:text-slate-900' : 'text-slate-400 hover:text-slate-200'
             }`}
           >
             <Building2 className="w-4 h-4" />
@@ -374,41 +390,79 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
           
           {/* Left Column: Plan and Core Subscription Details */}
           <div className="lg:col-span-1 space-y-6">
-            <div className={`p-6 rounded-3xl border shadow-lg space-y-4 ${
+            <div className={`p-6 rounded-3xl border shadow-xs space-y-4 ${
               isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900/60 border-slate-800 text-slate-100'
             }`}>
-              <h3 className="font-black text-sm uppercase tracking-wider text-slate-400">Current Subscription</h3>
+              <h3 className="font-black text-xs uppercase tracking-wider text-slate-500">Current Subscription</h3>
               
-              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
+              <div className={`p-4 rounded-2xl border space-y-3 ${
+                isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-950/70 border-slate-800'
+              }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-black text-white">
-                    {user?.subscriptionTier === 'free_trial' ? 'Starter Trial' : user?.subscriptionTier === 'pro_planner' ? 'Commercial Pro' : 'Enterprise Portfolio'}
+                  <span className={`text-sm font-black ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                    {user?.subscriptionTier === 'enterprise_tier'
+                      ? 'Enterprise Portfolio'
+                      : user?.subscriptionTier === 'pro_planner'
+                      ? 'Pro Plan ($149/mo)'
+                      : user?.subscriptionTier === 'starter_plan'
+                      ? 'Starter Plan ($59/mo)'
+                      : 'Free Forever ($0)'}
                   </span>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold border ${
+                    isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                  }`}>
                     {user?.subscriptionStatus === 'active' ? 'Active' : 'Trialing'}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  {user?.subscriptionTier === 'free_trial' 
-                    ? 'Explore compliance tools and standard AU retail calendar. Limit 15 SKUs.'
-                    : 'Full portfolio planning, unlimited AI Strategy Copilot, and executive deck PDF exports.'}
+                <p className="text-xs text-slate-500 leading-relaxed">
+                  {user?.subscriptionTier === 'enterprise_tier'
+                    ? 'Unlimited SKU range, unlimited AI simulations, and custom retail ERP feeds.'
+                    : user?.subscriptionTier === 'pro_planner'
+                    ? 'Up to 1,000 SKUs, 150 AI runs/mo, 1-click Schedule Guard, and un-watermarked JBP exports.'
+                    : user?.subscriptionTier === 'starter_plan'
+                    ? 'Up to 150 SKUs, 30 AI runs/mo, full 52-week planner, and clean Excel & CSV exports.'
+                    : 'Free sandbox with 1 active SKU and 1 AI Scenario run. Upgrade anytime for full exports.'}
                 </p>
-                <div className="pt-2 border-t border-slate-800 flex items-center justify-between text-xs font-mono">
+
+                <div className={`pt-2.5 border-t grid grid-cols-2 gap-2 text-xs ${
+                  isLight ? 'border-slate-200' : 'border-slate-800'
+                }`}>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">SKU Allowance</div>
+                    <div className={`font-black tabular-nums ${isLight ? 'text-slate-900' : 'text-white'}`}>
+                      {user?.maxSkusAllowed ?? 1} SKUs
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase font-bold">AI Scenario Runs</div>
+                    <div className={`font-black tabular-nums ${isLight ? 'text-indigo-600' : 'text-indigo-400'}`}>
+                      {user?.unlimitedAi
+                        ? 'Unlimited'
+                        : `${(user?.aiGenerationsRemaining ?? 1) + (user?.aiTopUpCredits ?? 0)} remaining`}
+                    </div>
+                  </div>
+                </div>
+
+                <div className={`pt-2 border-t flex items-center justify-between text-xs font-mono ${
+                  isLight ? 'border-slate-200' : 'border-slate-800'
+                }`}>
                   <span className="text-slate-500">ABN Filed</span>
-                  <span className="font-bold text-slate-300">{companyAbn}</span>
+                  <span className={`font-bold ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{companyAbn}</span>
                 </div>
               </div>
 
               {/* Edit Corporate Details */}
               <div className="space-y-3">
-                <h4 className="font-black text-xs text-slate-400">Tax Invoice / Billing Details</h4>
+                <h4 className="font-black text-xs text-slate-500">Tax Invoice / Billing Details</h4>
                 <div>
                   <label className="block text-[10px] text-slate-500 font-bold uppercase mb-1">Company Registered ABN</label>
                   <input
                     type="text"
                     value={companyAbn}
                     onChange={(e) => setCompanyAbn(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-mono font-bold text-white focus:outline-none"
+                    className={`w-full p-2.5 rounded-xl border text-xs font-mono font-bold focus:outline-none ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                    }`}
                     placeholder="e.g. 45 809 237 194"
                   />
                 </div>
@@ -418,48 +472,114 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     rows={2}
                     value={companyAddress}
                     onChange={(e) => setCompanyAddress(e.target.value)}
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                      isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                    }`}
                     placeholder="Company tax registration address"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={() => showToast('Tax billing credentials successfully updated.', 'success')}
-                  className="w-full py-2 px-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                  className={`w-full py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    isLight ? 'bg-slate-100 hover:bg-slate-200 text-slate-800' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                  }`}
                 >
                   Save Invoice Details
                 </button>
               </div>
 
-              {/* Upgrade RangeCraft */}
-              {user?.subscriptionTier === 'free_trial' && (
-                <div className="pt-2">
+              {/* Quick Plan & AI Top-Up Actions */}
+              <div className="pt-2 space-y-2.5">
+                {(!user || user.subscriptionTier === 'free_trial') && (
                   <button
                     onClick={() => {
-                      setPayTarget('pro_planner');
-                      setShowPayModal(true);
+                      if (onStartCheckout) {
+                        onStartCheckout({
+                          exportId: 'starter_plan',
+                          itemName: 'Starter Plan (A$59/mo inc. GST)',
+                          priceAud: 59,
+                          planType: 'starter_subscription',
+                          billingCycle: 'monthly',
+                          excludesGst: false
+                        });
+                      } else {
+                        setPayTarget('starter_plan');
+                        setShowPayModal(true);
+                      }
                     }}
-                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-black text-xs shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                    className={`w-full py-2.5 px-4 rounded-xl border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                      isLight
+                        ? 'bg-indigo-50 hover:bg-indigo-100 border-indigo-200 text-indigo-700'
+                        : 'bg-indigo-950/60 hover:bg-indigo-900/60 border-indigo-700 text-indigo-300'
+                    }`}
                   >
-                    <Zap className="w-4 h-4 text-amber-400 animate-pulse" />
-                    <span>Securely Upgrade to Commercial Pro</span>
+                    <span>Upgrade to Starter ($59/mo inc. GST)</span>
                   </button>
-                </div>
-              )}
+                )}
+
+                {(!user || user.subscriptionTier === 'free_trial' || user.subscriptionTier === 'starter_plan') && (
+                  <button
+                    onClick={() => {
+                      if (onStartCheckout) {
+                        onStartCheckout({
+                          exportId: 'pro_planner',
+                          itemName: 'Pro Plan (A$149/mo inc. GST)',
+                          priceAud: 149,
+                          planType: 'pro_subscription',
+                          billingCycle: 'monthly',
+                          excludesGst: false
+                        });
+                      } else {
+                        setPayTarget('pro_planner');
+                        setShowPayModal(true);
+                      }
+                    }}
+                    className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-xs shadow-md shadow-indigo-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
+                  >
+                    <Zap className="w-4 h-4 text-amber-300" />
+                    <span>Upgrade to Pro Plan ($149/mo inc. GST)</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    if (onStartCheckout) {
+                      onStartCheckout({
+                        exportId: 'ai_topup_50',
+                        itemName: '+50 Commercial Insight Credits ($29 inc. GST)',
+                        priceAud: 29,
+                        planType: 'ai_topup',
+                        excludesGst: false
+                      });
+                    } else {
+                      showToast('Select "+50 Commercial Insight Credits" from Plans to purchase credits ($29 inc. GST).', 'info');
+                    }
+                  }}
+                  className={`w-full py-2.5 px-4 rounded-xl border font-bold text-xs transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                    isLight
+                      ? 'bg-emerald-50 hover:bg-emerald-100 border-emerald-200 text-emerald-700'
+                      : 'bg-emerald-950/40 hover:bg-emerald-900/50 border-emerald-800 text-emerald-300'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Buy +50 Insight Credits ($29 inc. GST)</span>
+                </button>
+              </div>
             </div>
           </div>
 
           {/* Right Columns: Platform Paid Invoices Ledger */}
           <div className="lg:col-span-2 space-y-6">
-            <div className={`p-6 rounded-3xl border shadow-lg space-y-4 ${
+            <div className={`p-6 rounded-3xl border shadow-xs space-y-4 ${
               isLight ? 'bg-white border-slate-200' : 'bg-slate-900/60 border-slate-800'
             }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-black text-sm text-white">Tax Invoice Ledger</h3>
-                  <p className="text-[11px] text-slate-400">View, print, and download official Australian GST Tax Invoices.</p>
+                  <h3 className={`font-black text-sm ${isLight ? 'text-slate-900' : 'text-white'}`}>Tax Invoice Ledger</h3>
+                  <p className="text-xs text-slate-500">View, print, and download official Australian GST Tax Invoices.</p>
                 </div>
-                <span className="text-xs font-mono bg-blue-500/10 text-blue-400 px-2.5 py-1 rounded-xl border border-blue-500/20 font-bold">
+                <span className="text-xs font-mono bg-indigo-500/10 text-indigo-600 px-2.5 py-1 rounded-xl border border-indigo-500/20 font-bold">
                   {platformInvoices.length} Invoices Found
                 </span>
               </div>
@@ -468,36 +588,46 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                 {platformInvoices.map((inv) => (
                   <div
                     key={inv.id}
-                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs hover:border-slate-700 transition-colors"
+                    className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition-colors ${
+                      isLight
+                        ? 'bg-slate-50/70 border-slate-200 hover:border-slate-300'
+                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 shrink-0">
-                        <FileText className="w-5 h-5 text-blue-400" />
+                      <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                        isLight ? 'bg-white border-slate-200 text-indigo-600' : 'bg-slate-900 border-slate-800 text-blue-400'
+                      }`}>
+                        <FileText className="w-5 h-5" />
                       </div>
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-white">{inv.id}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-semibold font-mono">
+                          <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{inv.id}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 font-semibold font-mono">
                             {inv.status}
                           </span>
                         </div>
-                        <p className="font-bold text-slate-300 text-[11px] line-clamp-1">{inv.itemDescription}</p>
-                        <div className="text-[10px] text-slate-500 font-mono">
+                        <p className={`font-bold text-xs line-clamp-1 ${isLight ? 'text-slate-700' : 'text-slate-300'}`}>{inv.itemDescription}</p>
+                        <div className="text-[11px] text-slate-500 font-mono">
                           Issued: {inv.date} • Paid via {inv.paymentMethod === 'credit_card' ? 'Visa/Mastercard' : 'PayPal'}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
-                      <div className="text-right font-mono">
-                        <div className="font-black text-sm text-emerald-400">{formatAud(inv.amountAud)}</div>
-                        <div className="text-[9px] text-slate-500">Includes GST ${inv.gstAmount}</div>
+                    <div className={`flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 ${
+                      isLight ? 'border-slate-200' : 'border-slate-800'
+                    }`}>
+                      <div className="text-right font-mono tabular-nums">
+                        <div className="font-black text-sm text-emerald-600">{formatAud(inv.amountAud)}</div>
+                        <div className="text-[10px] text-slate-500">inc. GST</div>
                       </div>
 
                       <button
                         type="button"
                         onClick={() => setViewingPlatformInvoice(inv)}
-                        className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                        className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
+                          isLight ? 'bg-white border border-slate-200 hover:bg-slate-100 text-slate-700' : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                        }`}
                       >
                         <Printer className="w-3.5 h-3.5" />
                         <span>Print Invoice</span>
@@ -686,11 +816,11 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       </div>
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-white">{inv.id}</span>
-                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold font-mono border ${
+                          <span className={`font-bold ${isLight ? 'text-slate-900' : 'text-white'}`}>{inv.id}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded font-semibold font-mono border ${
                             inv.status === 'Paid' 
-                              ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' 
-                              : 'bg-amber-500/10 text-amber-400 border-amber-500/20 animate-pulse'
+                              ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' 
+                              : 'bg-amber-500/10 text-amber-600 border-amber-500/20'
                           }`}>
                             {inv.status}
                           </span>
@@ -706,7 +836,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
                       <div className="text-right font-mono">
                         <div className="font-black text-sm text-emerald-400">{formatAud(inv.amountAud)}</div>
-                        <div className="text-[9px] text-slate-500">+10% GST Claimable</div>
+                        <div className="text-[9px] text-slate-500">inc. GST</div>
                       </div>
 
                       <div className="flex gap-2">
@@ -761,7 +891,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     <span>256-Bit SSL Encrypted Checkout</span>
                   </div>
                   <h3 className="text-lg font-black text-white">
-                    Upgrade to {payTarget === 'pro_planner' ? 'Commercial Pro' : 'Enterprise Portfolio'}
+                    Upgrade to {payTarget === 'starter_plan' ? 'Starter Plan' : payTarget === 'pro_planner' ? 'Pro Plan' : 'Enterprise Portfolio'}
                   </h3>
                 </div>
                 <button
@@ -880,9 +1010,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Price (AUD)</label>
+                      <label className="block text-[10px] text-slate-400 font-bold uppercase mb-1">Price (AUD inc. GST)</label>
                       <div className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs font-black text-emerald-400 font-mono">
-                        ${payTarget === 'pro_planner' ? '149.00' : '499.00'} /mo
+                        ${payTarget === 'starter_plan' ? '59.00' : payTarget === 'pro_planner' ? '149.00' : '450.00'} inc. GST
                       </div>
                     </div>
                   </div>
@@ -898,13 +1028,13 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 cursor-pointer transition-all flex items-center justify-center gap-1.5"
                     >
                       <ShieldCheck className="w-4 h-4 text-slate-950" />
-                      <span>Process Secure payment (${payTarget === 'pro_planner' ? '149.00' : '499.00'} AUD)</span>
+                      <span>Process Secure payment (${payTarget === 'starter_plan' ? '59.00' : payTarget === 'pro_planner' ? '149.00' : '450.00'} inc. GST)</span>
                     </button>
                   )}
                 </form>
               ) : (
                 <div className="p-8 text-center space-y-4 flex flex-col items-center">
-                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 animate-bounce">
+                  <div className="w-16 h-16 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400">
                     <CheckCircle2 className="w-8 h-8" />
                   </div>
                   <h4 className="text-lg font-black text-white">Payment Securely Completed!</h4>
@@ -996,18 +1126,14 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     <tr className="border-b-2 border-slate-200 text-slate-500 uppercase text-[10px] font-bold">
                       <th className="pb-3 text-left">Product / Service Description</th>
                       <th className="pb-3 text-right">Qty</th>
-                      <th className="pb-3 text-right">Unit Price (ex GST)</th>
-                      <th className="pb-3 text-right">Tax Rate</th>
-                      <th className="pb-3 text-right">Total AUD</th>
+                      <th className="pb-3 text-right">Total AUD (inc. GST)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
                     <tr>
                       <td className="py-4 font-bold text-slate-900">{viewingPlatformInvoice.itemDescription}</td>
                       <td className="py-4 text-right">1</td>
-                      <td className="py-4 text-right">${(viewingPlatformInvoice.amountAud - viewingPlatformInvoice.gstAmount).toFixed(2)}</td>
-                      <td className="py-4 text-right">10% GST</td>
-                      <td className="py-4 text-right font-bold text-slate-900">${viewingPlatformInvoice.amountAud.toFixed(2)}</td>
+                      <td className="py-4 text-right font-bold text-slate-900">${viewingPlatformInvoice.amountAud.toFixed(2)} inc. GST</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1016,15 +1142,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
               {/* Bottom Totals */}
               <div className="flex justify-end pt-4 border-t border-slate-200">
                 <div className="w-64 space-y-2 text-xs font-medium">
-                  <div className="flex justify-between text-slate-500">
-                    <span>Subtotal (excluding GST)</span>
-                    <span className="font-mono">${(viewingPlatformInvoice.amountAud - viewingPlatformInvoice.gstAmount).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>GST (10%)</span>
-                    <span className="font-mono">${viewingPlatformInvoice.gstAmount.toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-black text-slate-950 pt-2 border-t border-slate-200">
+                  <div className="flex justify-between text-sm font-black text-slate-950 pt-2">
                     <span>Total Paid (inc. GST)</span>
                     <span className="font-mono">${viewingPlatformInvoice.amountAud.toFixed(2)} AUD</span>
                   </div>
@@ -1033,7 +1151,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
 
               {/* Compliance Remittance Note */}
               <div className="text-[10px] text-slate-400 text-center space-y-1">
-                <p>This invoice is electronically certified. All billing satisfies ACCC and Australian Taxation Office (ATO) criteria.</p>
+                <p>This invoice is electronically certified. All billing satisfies Australian Taxation Office (ATO) GST-inclusive tax invoice criteria.</p>
                 <p>© 2026 RangeCraft AU. All rights reserved.</p>
               </div>
             </motion.div>
@@ -1123,8 +1241,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       <th className="pb-3 text-left">Promotional Co-op Campaign Description</th>
                       <th className="pb-3 text-right">Week</th>
                       <th className="pb-3 text-right">SKU Code</th>
-                      <th className="pb-3 text-right">Tax Rate</th>
-                      <th className="pb-3 text-right">Total Claim AUD</th>
+                      <th className="pb-3 text-right">Total Claim AUD (inc. GST)</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
@@ -1135,8 +1252,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       </td>
                       <td className="py-4 text-right font-mono">W{viewingTradeInvoice.campaignWeek}</td>
                       <td className="py-4 text-right font-mono text-amber-600 font-bold">{viewingTradeInvoice.skuCode}</td>
-                      <td className="py-4 text-right">10% GST</td>
-                      <td className="py-4 text-right font-bold text-slate-900">${viewingTradeInvoice.amountAud.toFixed(2)}</td>
+                      <td className="py-4 text-right font-bold text-slate-900">${viewingTradeInvoice.amountAud.toFixed(2)} inc. GST</td>
                     </tr>
                   </tbody>
                 </table>
@@ -1145,15 +1261,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
               {/* Totals */}
               <div className="flex justify-end pt-4 border-t border-slate-200 text-xs">
                 <div className="w-64 space-y-2 font-medium">
-                  <div className="flex justify-between text-slate-500">
-                    <span>Trade Rebate Value (ex GST)</span>
-                    <span className="font-mono">${(viewingTradeInvoice.amountAud / 1.1).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-slate-500">
-                    <span>GST Rate (10%)</span>
-                    <span className="font-mono">${(viewingTradeInvoice.amountAud - (viewingTradeInvoice.amountAud / 1.1)).toFixed(2)}</span>
-                  </div>
-                  <div className="flex justify-between text-sm font-black text-slate-950 pt-2 border-t border-slate-200">
+                  <div className="flex justify-between text-sm font-black text-slate-950 pt-2">
                     <span>Total Claim Value (inc. GST)</span>
                     <span className="font-mono">${viewingTradeInvoice.amountAud.toFixed(2)} AUD</span>
                   </div>

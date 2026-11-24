@@ -1,4 +1,5 @@
 import { Product, WeekPromotion, PerformanceTier } from '../types';
+import { normalizeOptionalStock } from './inventoryForecast';
 
 export interface RangePortfolioAnalysis {
   totalSkus: number;
@@ -107,7 +108,8 @@ export function exportProductsToCsv(products: Product[]): string {
     'Tags',
     'Min Margin %',
     'Max Discount Depth %',
-    'Target Volume Lift %'
+    'Target Volume Lift %',
+    'Inventory On Hand (Optional)'
   ];
 
   const rows = products.map(p => [
@@ -127,7 +129,8 @@ export function exportProductsToCsv(products: Product[]): string {
     `"${p.tags.join(';')}"`,
     p.minMarginPercent?.toFixed(1) || '',
     p.maxDiscountDepthPercent?.toFixed(1) || '',
-    p.targetVolumeLiftPercent?.toFixed(1) || ''
+    p.targetVolumeLiftPercent?.toFixed(1) || '',
+    p.stockLevel !== undefined && p.stockLevel !== null ? String(p.stockLevel) : ''
   ]);
 
   return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -154,7 +157,8 @@ export function generateProductCsvTemplate(): string {
     'Tags',
     'Min Margin %',
     'Max Discount Depth %',
-    'Target Volume Lift %'
+    'Target Volume Lift %',
+    'Inventory On Hand (Optional)'
   ];
 
   const sampleRows = [
@@ -175,7 +179,8 @@ export function generateProductCsvTemplate(): string {
       '"Australia Day; BBQ; Hero; High Volume"',
       '45.0',
       '25.0',
-      '15.0'
+      '15.0',
+      ''
     ],
     [
       'SKU-HOM-001',
@@ -191,7 +196,11 @@ export function generateProductCsvTemplate(): string {
       '"18;20;24;28"',
       '4',
       'YES',
-      '"Winter; Heating; Energy Efficient; High Value"'
+      '"Winter; Heating; Energy Efficient; High Value"',
+      '',
+      '',
+      '',
+      '850'
     ],
     [
       'SKU-FMC-001',
@@ -207,7 +216,11 @@ export function generateProductCsvTemplate(): string {
       '"4;13;36;37;49;51"',
       '3',
       'YES',
-      '"Multi-Buy; Footy Finals; Impulse; High Margin"'
+      '"Multi-Buy; Footy Finals; Impulse; High Margin"',
+      '',
+      '',
+      '',
+      ''
     ],
     [
       'SKU-ELE-001',
@@ -223,7 +236,11 @@ export function generateProductCsvTemplate(): string {
       '"13;34;47;48;50"',
       '4',
       'YES',
-      '"Black Friday; Gifting; Father\'s Day; Hero"'
+      '"Black Friday; Gifting; Father\'s Day; Hero"',
+      '',
+      '',
+      '',
+      ''
     ],
     [
       'SKU-APP-001',
@@ -239,7 +256,11 @@ export function generateProductCsvTemplate(): string {
       '"18;20;25;30"',
       '4',
       'NO',
-      '"Winter Warmers; Premium Margin; Outerwear"'
+      '"Winter Warmers; Premium Margin; Outerwear"',
+      '',
+      '',
+      '',
+      ''
     ],
     [
       'SKU-CLR-001',
@@ -255,7 +276,11 @@ export function generateProductCsvTemplate(): string {
       '"8;25;26"',
       '4',
       'NO',
-      '"Clearance; EOFY; Markdown; Seasonal Exit"'
+      '"Clearance; EOFY; Markdown; Seasonal Exit"',
+      '',
+      '',
+      '',
+      ''
     ]
   ];
 
@@ -423,7 +448,8 @@ export function sanitizeProducts(products: Product[]): Product[] {
       ? p.tags.map(t => stripHtml(t)).filter(t => t.length > 0 && t.length < 40).slice(0, 8)
       : [cleanCategory, 'Active Trade'];
 
-    return {
+    const normalizedStock = normalizeOptionalStock(p.stockLevel);
+    const cleaned: Product = {
       ...p,
       sku: finalSku,
       name: cleanName,
@@ -434,11 +460,18 @@ export function sanitizeProducts(products: Product[]): Product[] {
       marginPercent,
       weeklyUnitsBaseline,
       tags: tags.length > 0 ? tags : [cleanCategory],
-      stockLevel: typeof p.stockLevel === 'number' && !isNaN(p.stockLevel) ? p.stockLevel : 1000,
       minPromoGapWeeks: typeof p.minPromoGapWeeks === 'number' && !isNaN(p.minPromoGapWeeks) ? Math.max(2, Math.min(12, p.minPromoGapWeeks)) : 4,
       seasonalPeak: p.seasonalPeak ? stripHtml(p.seasonalPeak).slice(0, 50) : 'All Year Trade',
       targetWeeks: Array.isArray(p.targetWeeks) && p.targetWeeks.length > 0 ? p.targetWeeks.filter(w => typeof w === 'number' && w >= 1 && w <= 52) : [4, 18, 34, 47],
     };
+
+    if (normalizedStock !== undefined) {
+      cleaned.stockLevel = normalizedStock;
+    } else {
+      delete cleaned.stockLevel;
+    }
+
+    return cleaned;
   });
 }
 
@@ -464,7 +497,8 @@ export function parseProductsCsv(csvText: string): Product[] {
   const rrpIdx = findCol(['variant price', 'price', 'rrp', 'retail price', 'unit price', 'selling price']);
   const costIdx = findCol(['cost per item', 'variant cost', 'cost', 'cogs', 'unit cost', 'wholesale']);
   const marginIdx = findCol(['margin %', 'margin', 'gross margin']);
-  const baselineIdx = findCol(['baseline', 'weekly units', 'units', 'volume', 'qty', 'inventory', 'variant inventory qty']);
+  const baselineIdx = findCol(['baseline', 'weekly units', 'units baseline', 'weekly volume', 'volume', 'qty']);
+  const stockIdx = findCol(['inventory on hand', 'stock level', 'stock', 'on hand', 'inventory', 'variant inventory qty']);
   const tierIdx = findCol(['tier', 'performance tier', 'priority']);
   const tagsIdx = findCol(['tags', 'keywords']);
   const promoWeeksIdx = findCol(['target weeks', 'weeks', 'promotional weeks']);
@@ -565,7 +599,9 @@ export function parseProductsCsv(csvText: string): Product[] {
       ? rawTags.split(/[;,]/).map(t => stripHtml(t)).filter(t => t.length > 0 && t.length < 40).slice(0, 6)
       : [cleanCategory, 'Imported'];
 
-    rawProducts.push({
+    const parsedStock = stockIdx !== -1 ? normalizeOptionalStock(tokens[stockIdx]) : undefined;
+
+    const productItem: Product = {
       sku: cleanSku,
       name: cleanName,
       category: cleanCategory,
@@ -577,11 +613,16 @@ export function parseProductsCsv(csvText: string): Product[] {
       performanceTier,
       seasonalPeak: 'All Year Trade',
       targetWeeks,
-      stockLevel: 1000,
       minPromoGapWeeks,
       supplierCoOpEligible,
       tags: tags.length > 0 ? tags : [cleanCategory],
-    });
+    };
+
+    if (parsedStock !== undefined) {
+      productItem.stockLevel = parsedStock;
+    }
+
+    rawProducts.push(productItem);
   }
 
   // Pass through sanitizer for guaranteed uniqueness and valid fields

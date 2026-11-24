@@ -40,30 +40,42 @@ export const ImportTutorialModal: React.FC<ImportTutorialModalProps> = ({
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.setAttribute('href', url);
-    link.setAttribute('download', `Planovate_SKU_Import_Template.csv`);
+    link.setAttribute('download', `RangeCraft_SKU_Import_Template.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-fade-in">
-      <div className={`relative w-full max-w-4xl rounded-3xl border shadow-2xl overflow-hidden my-8 ${
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+      <div className={`relative w-full h-[100dvh] sm:h-auto sm:max-h-[90dvh] sm:max-w-4xl rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl flex flex-col overflow-hidden ${
         isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#121829] border-[#1e2638] text-slate-100'
       }`}>
         
         {/* Accent Bar */}
-        <div className="h-2 bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400" />
+        <div className="h-1.5 bg-gradient-to-r from-blue-600 via-indigo-500 to-emerald-400 shrink-0" />
 
-        {/* Close Button */}
-        <button
-          onClick={onClose}
-          className="absolute top-5 right-5 p-2 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-colors cursor-pointer z-10"
-        >
-          <X className="w-5 h-5" />
-        </button>
+        {/* Fixed Top Close Bar */}
+        <div className={`shrink-0 px-4 py-3 sm:px-8 sm:py-4 border-b flex items-center justify-between gap-3 ${
+          isLight ? 'bg-white border-slate-200' : 'bg-[#121829] border-slate-800'
+        }`}>
+          <div className="flex items-center gap-2 text-blue-500 dark:text-blue-400 text-xs font-bold truncate">
+            <FileSpreadsheet className="w-4 h-4 shrink-0" />
+            <span className="truncate">Catalog Import Masterclass</span>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close tutorial modal"
+            className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl transition-colors cursor-pointer shrink-0 ${
+              isLight ? 'text-slate-500 hover:text-slate-900 hover:bg-slate-100' : 'text-slate-400 hover:text-white hover:bg-slate-800/60'
+            }`}
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
 
-        <div className="p-6 sm:p-10 space-y-6">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-5 sm:p-8 space-y-6">
           
           {/* Header */}
           <div className="flex items-start justify-between gap-4">
@@ -76,7 +88,7 @@ export const ImportTutorialModal: React.FC<ImportTutorialModalProps> = ({
                 How to Import Your SKU Catalog & Financials
               </h2>
               <p className={`text-xs sm:text-sm mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-                Step-by-step guidance on formatting CSV files to power your 52-week promotional calendar, scan rebate margins, and ACCC hiatus audits.
+                Step-by-step guidance on formatting CSV files to power your 52-week promotional calendar, scan rebate margins, and Custom Rules hiatus audits.
               </p>
             </div>
           </div>
@@ -145,7 +157,7 @@ export const ImportTutorialModal: React.FC<ImportTutorialModalProps> = ({
                   </div>
                   <h3 className="text-sm font-bold mb-1">Upload & Auto-Analyze</h3>
                   <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-                    Drag and drop your saved CSV file into Planovate. Our engine instantly validates margins, portfolio mix, and generates simulation matrices.
+                    Drag and drop your saved CSV file into RangeCraft. Our engine instantly validates margins, portfolio mix, and generates simulation matrices.
                   </p>
                 </div>
               </div>
@@ -220,7 +232,7 @@ export const ImportTutorialModal: React.FC<ImportTutorialModalProps> = ({
               <div className={`p-4 rounded-xl border ${isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/60 border-slate-800'}`}>
                 <h4 className="text-sm font-bold mb-1 text-slate-200">What if my currency is not AUD?</h4>
                 <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-                  Planovate's monetary fields default to AUD for Australian supermarket compliance, but you can input values in any currency; the margin ratios and percentage lifts remain exact.
+                  RangeCraft's monetary fields default to AUD for Australian channel compliance, but you can input values in any currency; the margin ratios and percentage lifts remain exact.
                 </p>
               </div>
 

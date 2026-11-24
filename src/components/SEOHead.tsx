@@ -11,7 +11,7 @@ export const SEOHead: React.FC = () => {
       "@type": "Offer",
       "priceCurrency": "AUD"
     },
-    "featureList": "52-week promotional calendar, scan rebate margin simulator, ACCC compliance auditor, FMCG trade spend optimization"
+    "featureList": "52-week promotional calendar, scan rebate margin simulator, Custom Rules compliance auditor, FMCG trade spend optimization"
   };
 
   return (

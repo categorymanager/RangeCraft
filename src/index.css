@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *, [data-theme="dark"], [data-theme="dark"] *));
 
 /* ----------------------------------------------------
    Modern Executive Typography & Global Smoothing
@@ -7,18 +8,19 @@ html {
   scroll-behavior: smooth;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  font-family: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   letter-spacing: -0.011em;
 }
 
 body {
   overflow-x: hidden;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
 }
 
 h1, h2, h3, h4, .font-display {
-  font-family: 'Outfit', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-  letter-spacing: -0.022em;
+  font-family: 'Space Grotesk', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  letter-spacing: -0.024em;
 }
 
 code, kbd, samp, pre, .font-mono {
@@ -26,126 +28,36 @@ code, kbd, samp, pre, .font-mono {
 }
 
 /* ----------------------------------------------------
-   1. Executive Light Mode (Default)
+   Semantic Theme Tokens (Light Default / Obsidian Dark)
 ---------------------------------------------------- */
 :root, [data-theme="light"] {
-  --bg-main: #f8fafc;
+  --bg-main: #F6F8FC;
   --bg-header: #ffffff;
   --bg-card: #ffffff;
   --bg-card-hover: #f1f5f9;
-  --bg-surface: #f8fafc;
-  --border-main: #e2e8f0;
+  --bg-surface: #F6F8FC;
+  --border-main: #DDE3EE;
   --border-subtle: #edf2f7;
-  --text-main: #0f172a;
-  --text-muted: #475569;
+  --text-main: #0F1B3D;
+  --text-muted: #4A5878;
   --text-dim: #64748b;
-  --accent-primary: #2563eb;
-  --accent-indigo: #4f46e5;
-  --accent-indigo-hover: #4338ca;
-  --lift-emerald: #059669;
-  --trust-bg: #ecfdf5;
-  --trust-border: #a7f3d0;
-  --trust-text: #065f46;
-  --tier-amber-bg: #fffbeb;
-  --tier-amber-border: #fde68a;
-  --tier-amber-text: #92400e;
+  --accent-primary: #2563EB;
+  --accent-indigo: #4F46E5;
+  --accent-indigo-hover: #4338CA;
+  --lift-emerald: #047857;
+  --trust-bg: #E7F7EF;
+  --trust-border: #047857;
+  --trust-text: #047857;
+  --tier-amber-bg: #FEF3C7;
+  --tier-amber-border: #F59E0B;
+  --tier-amber-text: #92400E;
+  background-color: #F6F8FC;
+  color: #0F1B3D;
 }
 
-[data-theme="light"] {
-  background-color: #f8fafc;
-  color: #0f172a;
-}
-
-[data-theme="light"] .bg-slate-950,
-[data-theme="light"] .bg-slate-950\/60,
-[data-theme="light"] .bg-slate-950\/80,
-[data-theme="light"] .bg-slate-950\/70,
-[data-theme="light"] .bg-slate-950\/50,
-[data-theme="light"] .bg-slate-950\/40 {
-  background-color: #f8fafc !important;
-}
-
-[data-theme="light"] .bg-slate-900,
-[data-theme="light"] .bg-slate-900\/95,
-[data-theme="light"] .bg-slate-900\/90,
-[data-theme="light"] .bg-slate-900\/80,
-[data-theme="light"] .bg-slate-900\/70,
-[data-theme="light"] .bg-slate-900\/60 {
-  background-color: #ffffff !important;
-}
-
-[data-theme="light"] .bg-slate-800,
-[data-theme="light"] .bg-slate-800\/80,
-[data-theme="light"] .bg-slate-800\/60,
-[data-theme="light"] .bg-slate-800\/50,
-[data-theme="light"] .bg-slate-800\/40 {
-  background-color: #f1f5f9 !important;
-}
-
-[data-theme="light"] .bg-slate-800\/90 {
-  background-color: #e2e8f0 !important;
-}
-
-[data-theme="light"] .border-slate-800,
-[data-theme="light"] .border-slate-800\/80,
-[data-theme="light"] .border-slate-800\/60,
-[data-theme="light"] .border-slate-800\/50,
-[data-theme="light"] .border-slate-900 {
-  border-color: #e2e8f0 !important;
-}
-
-[data-theme="light"] .border-slate-700,
-[data-theme="light"] .border-slate-700\/80,
-[data-theme="light"] .border-slate-700\/60,
-[data-theme="light"] .border-slate-700\/50 {
-  border-color: #cbd5e1 !important;
-}
-
-[data-theme="light"] .text-white,
-[data-theme="light"] .text-slate-100 {
-  color: #0f172a !important;
-}
-
-[data-theme="light"] .text-slate-200 {
-  color: #1e293b !important;
-}
-
-[data-theme="light"] .text-slate-300 {
-  color: #334155 !important;
-}
-
-[data-theme="light"] .text-slate-400 {
-  color: #475569 !important;
-}
-
-[data-theme="light"] .text-slate-500 {
-  color: #64748b !important;
-}
-
-[data-theme="light"] select,
-[data-theme="light"] input,
-[data-theme="light"] textarea {
-  color: #0f172a !important;
-  background-color: #ffffff !important;
-  border-color: #cbd5e1 !important;
-}
-
-[data-theme="light"] select option {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
-}
-
-[data-theme="light"] .shadow-xl,
-[data-theme="light"] .shadow-2xl {
-  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06), 0 8px 10px -6px rgba(15, 23, 42, 0.04) !important;
-}
-
-/* ----------------------------------------------------
-   2. Obsidian Dark Mode
----------------------------------------------------- */
-[data-theme="dark"] {
+[data-theme="dark"], .dark {
   --bg-main: #090d16;
-  --bg-header: #0f172a;
+  --bg-header: #0F1B3D;
   --bg-card: #111726;
   --bg-card-hover: #172238;
   --bg-surface: #1e293b;
@@ -154,95 +66,30 @@ code, kbd, samp, pre, .font-mono {
   --text-main: #f8fafc;
   --text-muted: #94a3b8;
   --text-dim: #64748b;
-  --accent-primary: #3b82f6;
+  --accent-primary: #2563EB;
   --accent-indigo: #6366f1;
-  --lift-emerald: #10b981;
-  --trust-bg: rgba(16, 185, 129, 0.1);
-  --trust-border: rgba(16, 185, 129, 0.3);
+  --lift-emerald: #047857;
+  --trust-bg: rgba(4, 120, 87, 0.15);
+  --trust-border: rgba(4, 120, 87, 0.4);
   --trust-text: #34d399;
-  --tier-amber-bg: rgba(245, 158, 11, 0.1);
-  --tier-amber-border: rgba(245, 158, 11, 0.3);
+  --tier-amber-bg: rgba(245, 158, 11, 0.15);
+  --tier-amber-border: rgba(245, 158, 11, 0.4);
   --tier-amber-text: #fbbf24;
   background-color: #090d16;
   color: #f8fafc;
 }
 
-[data-theme="dark"] .bg-slate-950,
-[data-theme="dark"] .bg-slate-950\/60,
-[data-theme="dark"] .bg-slate-950\/80,
-[data-theme="dark"] .bg-slate-950\/70,
-[data-theme="dark"] .bg-slate-950\/50,
-[data-theme="dark"] .bg-slate-950\/40 {
-  background-color: #090d16 !important;
-}
-
-[data-theme="dark"] .bg-slate-900,
-[data-theme="dark"] .bg-slate-900\/95,
-[data-theme="dark"] .bg-slate-900\/90,
-[data-theme="dark"] .bg-slate-900\/80,
-[data-theme="dark"] .bg-slate-900\/70,
-[data-theme="dark"] .bg-slate-900\/60 {
-  background-color: #111726 !important;
-}
-
-[data-theme="dark"] .bg-slate-800,
-[data-theme="dark"] .bg-slate-800\/80,
-[data-theme="dark"] .bg-slate-800\/60,
-[data-theme="dark"] .bg-slate-800\/50,
-[data-theme="dark"] .bg-slate-800\/40 {
-  background-color: #172238 !important;
-}
-
-[data-theme="dark"] .border-slate-800,
-[data-theme="dark"] .border-slate-800\/80,
-[data-theme="dark"] .border-slate-800\/60,
-[data-theme="dark"] .border-slate-900 {
-  border-color: #1e293b !important;
-}
-
-[data-theme="dark"] .border-slate-700,
-[data-theme="dark"] .border-slate-700\/80,
-[data-theme="dark"] .border-slate-700\/60 {
-  border-color: #334155 !important;
-}
-
-[data-theme="dark"] .text-white,
-[data-theme="dark"] .text-slate-100 {
-  color: #f8fafc !important;
-}
-
-[data-theme="dark"] .text-slate-200 {
-  color: #e2e8f0 !important;
-}
-
-[data-theme="dark"] .text-slate-300 {
-  color: #cbd5e1 !important;
-}
-
-[data-theme="dark"] .text-slate-400 {
-  color: #94a3b8 !important;
-}
-
-[data-theme="dark"] .text-slate-500 {
-  color: #64748b !important;
-}
-
-[data-theme="dark"] select,
-[data-theme="dark"] input,
-[data-theme="dark"] textarea {
-  color: #f8fafc !important;
-  background-color: #090d16 !important;
-  border-color: #1e293b !important;
-}
-
-[data-theme="dark"] select option {
-  background-color: #111726 !important;
-  color: #f8fafc !important;
-}
-
 /* ----------------------------------------------------
    Custom UI Utilities & Scrollbar
 ---------------------------------------------------- */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -272,4 +119,31 @@ code, kbd, samp, pre, .font-mono {
 
 .animate-marquee:hover {
   animation-play-state: paused;
+}
+
+/* ----------------------------------------------------
+   Friendly Light Checkout Canvas Isolation
+---------------------------------------------------- */
+.checkout-light-canvas {
+  background-color: #ffffff;
+  color: #0f172a;
+}
+
+.checkout-light-canvas input,
+.checkout-light-canvas select,
+.checkout-light-canvas textarea {
+  color: #0f172a;
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+
+.checkout-light-canvas input:focus,
+.checkout-light-canvas select:focus,
+.checkout-light-canvas textarea:focus {
+  border-color: #4f46e5;
+}
+
+.checkout-light-canvas select option {
+  background-color: #ffffff;
+  color: #0f172a;
 }

@@ -52,6 +52,7 @@ export const CURRENCY_CONFIGS: Record<CurrencyCode, CurrencyConfig> = {
 // Base AUD Pricing Tiers
 export const BASE_PRICING_AUD: Record<SubscriptionTier, number> = {
   free_trial: 0,
+  starter_plan: 59,
   pro_planner: 149,
   enterprise_tier: 399,
 };

@@ -37,7 +37,7 @@ export const INITIAL_TRADING_TERMS: TradingTerms[] = [
     effectiveFrom: '2026-01-01',
     effectiveTo: '2026-12-31',
     contractSignee: 'National Commercial Sales Director',
-    notes: 'Binding joint business planning terms. Includes scan rebate audit rights and guaranteed 4-week ACCC baseline gap protection.',
+    notes: 'Binding joint business planning terms. Includes scan rebate audit rights and guaranteed 4-week custom rule baseline gap protection.',
     createdAt: '2026-01-05T09:00:00.000Z',
     updatedAt: '2026-08-10T14:30:00.000Z'
   },

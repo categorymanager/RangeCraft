@@ -1,6 +1,8 @@
 import React from 'react';
 import { Lock, Sparkles, ShieldCheck, Download, Zap, CheckCircle2 } from 'lucide-react';
+import { UserProfile } from '../types';
 import { useActiveCurrency } from '../utils/currency';
+import { canClaimFreeTrial, hasActivePaidSubscription } from '../utils/entitlements';
 
 interface FrostedPaywallOverlayProps {
   title?: string;
@@ -8,6 +10,7 @@ interface FrostedPaywallOverlayProps {
   featureBullets?: string[];
   exportId: string;
   itemName: string;
+  userProfile?: UserProfile | null;
   onUnlockSingle: (exportId: string, itemName: string) => void;
   onGoPro: () => void;
   compact?: boolean;
@@ -20,16 +23,19 @@ export const FrostedPaywallOverlay: React.FC<FrostedPaywallOverlayProps> = ({
   featureBullets = [
     'Complete unredacted data tables & formulas',
     'Instant board-ready download (PDF / Excel / PPTX)',
-    '100% Satisfaction Guarantee & ACCC Hiatus compliant'
+    '100% Satisfaction Guarantee & Custom Rules compliant'
   ],
   exportId,
   itemName,
+  userProfile,
   onUnlockSingle,
   onGoPro,
   compact = false,
   blurHeight = 'min-h-[320px]'
 }) => {
   const { currency, format } = useActiveCurrency();
+  const trialEligible = canClaimFreeTrial(userProfile);
+  const isPaidActive = hasActivePaidSubscription(userProfile);
 
   return (
     <div className={`relative w-full ${blurHeight} flex items-center justify-center p-4 sm:p-6 overflow-hidden rounded-2xl`}>
@@ -41,7 +47,7 @@ export const FrostedPaywallOverlay: React.FC<FrostedPaywallOverlayProps> = ({
         {/* Top Badge */}
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-bold mb-4">
           <Lock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-          <span>PRO & REVERSE FREE TRIAL ACCESS</span>
+          <span>{trialEligible ? 'PRO & REVERSE FREE TRIAL ACCESS' : 'COMMERCIAL PRO ACCESS'}</span>
         </div>
 
         <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -73,17 +79,23 @@ export const FrostedPaywallOverlay: React.FC<FrostedPaywallOverlayProps> = ({
             className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-slate-900 hover:bg-slate-800 dark:bg-slate-800 dark:hover:bg-slate-700 text-white font-bold text-xs shadow-md transition-all cursor-pointer border border-slate-700"
           >
             <Download className="w-4 h-4 text-emerald-400" />
-            <span>Unlock Single Export — {format(19)}</span>
+            <span>Unlock Single Export — {format(19)} inc. GST</span>
           </button>
 
-          {/* CTA 2: 14-Day Free Trial / Pro Subscription */}
+          {/* CTA 2: Upgrade / Pro Access */}
           <button
             type="button"
             onClick={onGoPro}
             className="w-full sm:w-auto flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-500 hover:to-blue-600 text-white font-black text-xs shadow-lg shadow-indigo-500/25 transition-all cursor-pointer ring-2 ring-indigo-400/40"
           >
             <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
-            <span>Start 14-Day Free Pro Access</span>
+            <span>
+              {isPaidActive
+                ? 'Manage Pro Plan'
+                : trialEligible
+                ? 'Start 14-Day Free Pro Access'
+                : 'Upgrade to Pro Plan'}
+            </span>
           </button>
         </div>
 
@@ -100,7 +112,7 @@ export const FrostedPaywallOverlay: React.FC<FrostedPaywallOverlayProps> = ({
           </span>
           <span className="text-slate-300 dark:text-slate-700">•</span>
           <span className="flex items-center gap-1 text-emerald-600 dark:text-emerald-400 font-semibold">
-            100% ACCC Hiatus Compliant
+            100% Custom Rules Compliant
           </span>
         </div>
       </div>

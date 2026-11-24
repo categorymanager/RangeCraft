@@ -388,7 +388,7 @@ export const AUSTRALIAN_52_WEEKS: AustralianWeekEvent[] = [
     month: "Jul",
     startDate: "16 Jul 2026",
     endDate: "22 Jul 2026",
-    eventName: "Deep Winter Comfort & Tim Tam Slam Season",
+    eventName: "Deep Winter Comfort & Sweet Treats Season",
     isMajorRetailMoment: false,
     defaultTheme: "Warm Drinks & Sweet Winter Treats",
     seasonalContext: "Peak chocolate and hot beverage consumption in southern states.",
@@ -508,7 +508,7 @@ export const AUSTRALIAN_52_WEEKS: AustralianWeekEvent[] = [
     eventName: "National Spring Clean Event",
     isMajorRetailMoment: true,
     defaultTheme: "The Big Spring Clean - Deep Clean & Organize",
-    seasonalContext: "Annual household spring cleaning ritual; high demand for Dyson cordless vacuums, carpet cleaners, and power washers.",
+    seasonalContext: "Annual household spring cleaning ritual; high demand for cordless stick vacuums, carpet cleaners, and power washers.",
     targetCategoryAffinities: ["Floorcare & Cleaning", "Power Tools & Hardware", "Everyday Tops & Tees"],
     keyShopperDrivers: ["Home organization", "Deep seasonal clean"]
   },
@@ -588,7 +588,7 @@ export const AUSTRALIAN_52_WEEKS: AustralianWeekEvent[] = [
     eventName: "Melbourne Cup Carnival Long Weekend",
     isMajorRetailMoment: true,
     defaultTheme: "Spring Racing Carnival & Festive Entertaining",
-    seasonalContext: "Public holiday in VIC; nationwide office sweepstakes and spring BBQ parties. Tim Tams, coolers, party platters.",
+    seasonalContext: "Public holiday in VIC; nationwide office sweepstakes and spring BBQ parties. Biscuit gift packs, coolers, party platters.",
     targetCategoryAffinities: ["Coolers & Hydration", "Snacks & Confectionery", "Beverages", "BBQ & Outdoor Cooking"],
     keyShopperDrivers: ["Race day hosting", "Gourmet platters & drinks"]
   },
@@ -627,7 +627,7 @@ export const AUSTRALIAN_52_WEEKS: AustralianWeekEvent[] = [
     eventName: "Black Friday Mega Sale (Biggest Retail Event)",
     isMajorRetailMoment: true,
     defaultTheme: "BLACK FRIDAY SUPER SALE - Deepest Discounts of the Year",
-    seasonalContext: "The single largest spending week on the Australian retail calendar. Massive volume spikes across TVs, Dyson vacuums, Sunbeam espresso machines, down jackets, and tech.",
+    seasonalContext: "The single largest spending week on the Australian retail calendar. Massive volume spikes across TVs, cordless vacuums, espresso machines, down jackets, and tech.",
     targetCategoryAffinities: ["Televisions & Audio", "Floorcare & Cleaning", "Coffee & Breakfast", "Audio & Speakers", "BBQ & Outdoor Cooking"],
     keyShopperDrivers: ["Major Christmas gift buying", "Unmissable doorbuster discounts", "High volume impulse"]
   },
@@ -666,7 +666,7 @@ export const AUSTRALIAN_52_WEEKS: AustralianWeekEvent[] = [
     eventName: "Peak Christmas Gifting Sprint",
     isMajorRetailMoment: true,
     defaultTheme: "The Great Christmas Gift Hall - For Everyone on Your List",
-    seasonalContext: "Peak retail foot traffic and basket sizes. Espresso machines, Cadbury Favourites, JBL speakers, and premium BBQ grills.",
+    seasonalContext: "Peak retail foot traffic and basket sizes. Espresso machines, chocolate gift boxes, Bluetooth speakers, and premium BBQ grills.",
     targetCategoryAffinities: ["Coffee & Breakfast", "Gifting & Seasonal", "Audio & Speakers", "BBQ & Outdoor Cooking", "Beverages"],
     keyShopperDrivers: ["Last-minute gift buying", "Christmas feast grocery shopping"]
   },

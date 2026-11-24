@@ -57,7 +57,7 @@ export function generate52WeekCommercialPlanExcel(
       'Supplier Co-Op Scan Funding (AUD)': p.tradeSpendAud,
       'Catalogue Placement': p.cataloguePlacement,
       'Active Channels': p.activeChannels.join(', '),
-      'ACCC Hiatus / Clash Status': p.clashWarnings.length === 0 ? 'COMPLIANT (Clear)' : `WARNING: ${p.clashWarnings.map(c => c.message).join(' | ')}`
+      'Custom Rules / Clash Status': p.clashWarnings.length === 0 ? 'COMPLIANT (Clear)' : `WARNING: ${p.clashWarnings.map(c => c.message).join(' | ')}`
     };
   });
 
@@ -87,11 +87,11 @@ export function generate52WeekCommercialPlanExcel(
     { 'Commercial Metric': 'Annual Incremental Promotional Units', 'Value': `${Math.round(kpis?.annualProjectedUnits || 185000).toLocaleString()} units`, 'Benchmark / Notes': 'Volume lift above everyday baseline' },
     { 'Commercial Metric': 'Overall Volume Lift %', 'Value': `+${Math.round(kpis?.overallLiftPercent || 145)}%`, 'Benchmark / Notes': 'Catalog & gondola end execution' },
     { 'Commercial Metric': 'Supplier Co-Op Trade Scan Funding (AUD)', 'Value': `$${Math.round(kpis?.totalTradeSpendFundingAud || 185000).toLocaleString()}`, 'Benchmark / Notes': 'Recovered vendor allowances' },
-    { 'Commercial Metric': 'ACCC Promotional Hiatus Compliance', 'Value': `100% Passed`, 'Benchmark / Notes': 'Strict 4-week regular price hiatus adhered' },
+    { 'Commercial Metric': 'Custom Rule Hiatus Compliance', 'Value': `100% Passed`, 'Benchmark / Notes': 'Strict 4-week regular price hiatus adhered' },
     { 'Commercial Metric': 'Total Range Active SKUs', 'Value': `${products.length} SKUs`, 'Benchmark / Notes': 'Optimized commercial range' }
   ];
 
-  // Sheet 4: ACCC Compliance & Two-Price Audit
+  // Sheet 4: Custom Rules & Price Spacing Audit
   const complianceRows = promotions.map(p => {
     const hero = getProduct(p.heroSku);
     const hasClash = p.clashWarnings.length > 0;
@@ -104,7 +104,7 @@ export function generate52WeekCommercialPlanExcel(
       'Normal RRP (Was Price)': `$${hero?.rrp.toFixed(2) || '0.00'}`,
       'Promotional Price (Now Price)': `$${p.mechanic?.promoRrp.toFixed(2) || '0.00'}`,
       'Discount Applied': `${hero && hero.rrp > 0 ? Math.round(((hero.rrp - p.mechanic.promoRrp) / hero.rrp) * 100) : 0}% Off`,
-      'ACCC Status': hasClash ? 'NON-COMPLIANT / CLASH DETECTED' : '100% COMPLIANT',
+      'Custom Rules Status': hasClash ? 'NON-COMPLIANT / CLASH DETECTED' : '100% COMPLIANT',
       'Audit Notes': hasClash ? p.clashWarnings.map(c => c.message).join('; ') : 'Satisfies 4-week uninterrupted regular pricing buffer.'
     };
   });
@@ -119,7 +119,7 @@ export function generate52WeekCommercialPlanExcel(
   XLSX.utils.book_append_sheet(wb, wsPromos, '52-Week Master Schedule');
   XLSX.utils.book_append_sheet(wb, wsCatalog, 'SKU Range & Margins');
   XLSX.utils.book_append_sheet(wb, wsSummary, 'Executive KPIs & Funding');
-  XLSX.utils.book_append_sheet(wb, wsCompliance, 'ACCC Compliance Audit');
+  XLSX.utils.book_append_sheet(wb, wsCompliance, 'Custom Rules Audit');
 
   XLSX.writeFile(wb, filename);
   trackExportDownload('52_week_commercial_plan', 'xlsx', filename);
@@ -225,7 +225,7 @@ export function generateExecutiveJbpPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(18);
   doc.setTextColor(255, 255, 255);
-  doc.text('PROMOSTRAT AU™ | COMMERCIAL MERCHANDISING BRIEF', margin, 38);
+  doc.text('RANGECRAFT™ | COMMERCIAL MERCHANDISING BRIEF', margin, 38);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(10);
@@ -284,7 +284,7 @@ export function generateExecutiveJbpPdf(
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(9.5);
   doc.setTextColor(51, 65, 85);
-  const thesisText = briefing.executiveThesis || 'This annual commercial merchandising strategy establishes an authoritative, disciplined promotional cadence across Australian grocery and retail channels. Grounded in margin governance and high-velocity seasonal activations, all 52 promotional cycles comply with Australian Consumer Law and ACCC two-price comparison regulations.';
+  const thesisText = briefing.executiveThesis || 'This annual commercial merchandising strategy establishes an authoritative, disciplined promotional cadence across national grocery and retail channels. Grounded in margin governance and high-velocity seasonal activations, all 52 promotional cycles adhere to strict Custom Scheduling Rules and pricing integrity standards.';
   const splitThesis = doc.splitTextToSize(thesisText, contentWidth);
   doc.text(splitThesis, margin, currentY);
   currentY += splitThesis.length * 13 + 12;
@@ -302,7 +302,7 @@ export function generateExecutiveJbpPdf(
   const objectives = briefing.keyObjectives || [
     'Deliver projected revenue target while enforcing a strict 35% blended gross margin floor.',
     'Align hero promotions with peak Australian retail demand moments (Australia Day, Easter, EOFY, Footy Finals, Christmas).',
-    'Ensure 100% ACCC promotional pricing compliance with mandatory 4-week regular price hiatus buffers.',
+    'Ensure 100% Custom Rules compliance with mandatory 4-week regular price hiatus buffers.',
     'Maximise supplier scan co-op funding across front-cover catalogue and double-page spread features.'
   ];
 
@@ -356,17 +356,17 @@ export function generateExecutiveJbpPdf(
     currentY = 45;
   }
 
-  // Section 4: Governance, Trade Spend & ACCC Legal Compliance
+  // Section 4: Governance, Trade Spend & Custom Rules Compliance
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(12);
   doc.setTextColor(30, 41, 59);
-  doc.text('4. Trade Funding Governance & ACCC Legal Compliance', margin, currentY);
+  doc.text('4. Trade Funding Governance & Custom Rules Compliance', margin, currentY);
   currentY += 14;
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(8.5);
   doc.setTextColor(71, 85, 105);
-  const complianceText = briefing.governanceAndCompliance || 'All promotional pricing structures comply with the Competition and Consumer Act 2010 (Cth) and ACCC Guidelines for Two-Price and Was/Now Comparisons. Regular RRPs are maintained for an uninterrupted minimum 4-week hiatus prior to discount activation.';
+  const complianceText = briefing.governanceAndCompliance || 'All promotional pricing structures follow Custom Scheduling Rules and pricing integrity standards. Regular RRPs are maintained for an uninterrupted minimum 4-week hiatus prior to discount activation.';
   const splitComp = doc.splitTextToSize(complianceText, contentWidth);
   doc.text(splitComp, margin, currentY);
   currentY += splitComp.length * 11 + 16;
@@ -379,12 +379,12 @@ export function generateExecutiveJbpPdf(
   doc.setFont('helvetica', 'bold');
   doc.setFontSize(8.5);
   doc.setTextColor(15, 23, 42);
-  doc.text('COMMERCIAL ENDORSEMENT & COMPLIANCE SEAL', margin + 12, currentY + 16);
+  doc.text('COMMERCIAL ENDORSEMENT & GOVERNANCE SEAL', margin + 12, currentY + 16);
 
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(7.5);
   doc.setTextColor(100, 116, 139);
-  doc.text(`Generated for: ${userProfile?.displayName || userProfile?.email || 'Commercial Category Partner'} • Prepared by RangeCraft AU Enterprise Intelligence`, margin + 12, currentY + 30);
+  doc.text(`Generated for: ${userProfile?.displayName || userProfile?.email || 'Commercial Category Partner'} • Prepared by RangeCraft Commercial OS`, margin + 12, currentY + 30);
   doc.text('Australian Copyright © 2026 RangeCraft AU Pty Ltd (ACN 648 912 340 / ABN 48 648 912 340). All rights reserved.', margin + 12, currentY + 44);
 
   // Footer page numbering
@@ -394,8 +394,8 @@ export function generateExecutiveJbpPdf(
     doc.setFont('helvetica', 'normal');
     doc.setFontSize(7.5);
     doc.setTextColor(148, 163, 184);
-    doc.text(`RangeCraft AU™ Commercial JBP Report • Page ${i} of ${totalPages}`, margin, pageHeight - 16);
-    doc.text('ACCC Compliant Trade Model', pageWidth - margin - 120, pageHeight - 16);
+    doc.text(`RangeCraft™ Commercial JBP Report • Page ${i} of ${totalPages}`, margin, pageHeight - 16);
+    doc.text('Custom Rules Compliant Model', pageWidth - margin - 130, pageHeight - 16);
   }
 
   doc.save(filename);

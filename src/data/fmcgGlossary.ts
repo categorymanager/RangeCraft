@@ -40,7 +40,7 @@ export const FMCG_GLOSSARY: Record<string, FmcgTermDefinition> = {
     shortLabel: 'JBP',
     category: 'Strategy & Planning',
     definition: 'A collaborative, annual strategic commercial framework established between a supplier and a retail category buyer aligning revenue targets, trade spend, promotional weeks, NPD launches, and category growth goals.',
-    example: 'An annual JBP agreed with Coles or Woolworths mapping out 12 key promotional feature weeks and 4 seasonal gondola ends.',
+    example: 'An annual JBP agreed with national supermarket category buyers mapping out 12 key promotional feature weeks and 4 seasonal gondola ends.',
     proTip: 'Presenting a compliance-certified 52-week plan with margin protection guarantees gives you tremendous leverage during JBP reviews.'
   },
   'dead-net-cost': {
@@ -53,12 +53,12 @@ export const FMCG_GLOSSARY: Record<string, FmcgTermDefinition> = {
     proTip: 'Retail category buyers negotiate on Dead Net Cost to determine their actual margin percentage during promotional weeks.'
   },
   'accc-hiatus': {
-    term: 'ACCC 4-Week Hiatus Rule',
-    shortLabel: 'ACCC Hiatus',
+    term: 'Custom 4-Week Hiatus Rule',
+    shortLabel: 'Custom Hiatus',
     category: 'Compliance & Retail',
-    definition: 'Australian Competition & Consumer Commission (ACCC) regulatory requirement stipulating that promotional discount claims (e.g. "Save $3.00" or "1/2 Price") must be preceded by an uninterrupted regular price period (typically 4 weeks) so discounts are genuine.',
-    example: 'A product discounted in Week 10 cannot be discounted again in Weeks 11, 12, or 13 without violating normal price hiatus standards.',
-    proTip: 'RangeCraft automatically audits all 52 weeks and reslots conflicting promotions to guarantee 100% ACCC compliance.'
+    definition: 'Commercial scheduling governance rule stipulating that promotional discount claims (e.g. "Save $3.00" or "1/2 Price") must be preceded by an uninterrupted regular price period (typically 4 weeks) so discounts remain credible and profitable.',
+    example: 'A product discounted in Week 10 cannot be discounted again in Weeks 11, 12, or 13 without violating standard baseline price hiatus rules.',
+    proTip: 'RangeCraft automatically audits all 52 weeks and reslots conflicting promotions to satisfy 100% of your custom hiatus rules.'
   },
   'margin-safety-floor': {
     term: 'Margin Safety Floor',

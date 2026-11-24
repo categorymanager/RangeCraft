@@ -46,8 +46,10 @@ export const RangeCraftLogo: React.FC<RangeCraftLogoProps> = ({
   const isWhite = themeVariant === 'white';
   const isLight = themeVariant === 'light';
 
+  const hasDisplayOverride = /\b(hidden|block|flex|inline-flex|grid)\b/.test(className);
+
   return (
-    <div className={`inline-flex items-center gap-2.5 sm:gap-3 select-none ${className}`}>
+    <div className={`${hasDisplayOverride ? '' : 'inline-flex '}items-center gap-2.5 sm:gap-3 select-none ${className}`}>
       {/* Precision FMCG Retail Matrix & Growth Vertex Emblem */}
       <div 
         className={`relative shrink-0 ${iconSizeMap[size]} rounded-xl sm:rounded-2xl flex items-center justify-center shadow-lg transition-transform duration-200 group-hover:scale-105 ${

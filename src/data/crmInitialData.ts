@@ -9,7 +9,7 @@ export const INITIAL_CRM_ACTIVITIES: CrmActivity[] = [];
 export const SAMPLE_CRM_ACCOUNTS: CrmAccount[] = [
   {
     id: 'acc-1',
-    name: 'National Supermarket Network (Coles / Woolworths)',
+    name: 'Major Supermarkets & Chains (National Grocery)',
     companyType: 'Retailer',
     contactName: 'Sarah Jenkins (Senior Category Mgr)',
     email: 'sjenkins@nationalretailnetwork.com.au',
@@ -18,16 +18,16 @@ export const SAMPLE_CRM_ACCOUNTS: CrmAccount[] = [
     assignedSkuSkus: ['SKU-FMC-001', 'SKU-FMC-003', 'SKU-FMC-005'],
     totalPipelineValueAud: 485000,
     creditTerms: 'Net 45 Days (Scan-Based Trading)',
-    notes: 'Key national grocery account. Enforce 4-week hiatus compliance between major catalogue promotions.',
+    notes: 'Key national grocery account. Enforce custom 4-week hiatus spacing rules between major catalogue promotions.',
     lastInteractionDate: '2026-08-10',
     marketRegion: 'Australia & New Zealand'
   },
   {
     id: 'acc-2',
-    name: 'Metcash & Independent Grocers Network (IGA)',
+    name: 'Independent Retailers & Wholesale Group',
     companyType: 'Wholesale Distributor',
     contactName: 'Liam O Connor (Category Lead)',
-    email: 'liam.oconnor@metcashdealers.com.au',
+    email: 'liam.oconnor@wholesaleretailgroup.com.au',
     phone: '+61 3 9912 4400',
     status: 'Active Partner',
     assignedSkuSkus: ['SKU-ELE-003', 'SKU-ELE-004', 'SKU-OUT-004'],
@@ -59,7 +59,7 @@ export const SAMPLE_CRM_DEALS: CrmDeal[] = [
     id: 'deal-1',
     title: 'National Network Australia Day Super Feature (W4)',
     accountId: 'acc-1',
-    accountName: 'National Supermarket Network (Coles / Woolworths)',
+    accountName: 'Major Supermarkets & Chains (National Grocery)',
     valueAud: 95000,
     stage: 'Contracted',
     probabilityPercent: 100,
@@ -69,9 +69,9 @@ export const SAMPLE_CRM_DEALS: CrmDeal[] = [
   },
   {
     id: 'deal-2',
-    title: 'IGA Mid-Year Mega Sale Gondola Feature',
+    title: 'Independent Grocer Mid-Year Sale Gondola Feature',
     accountId: 'acc-2',
-    accountName: 'Metcash & Independent Grocers Network (IGA)',
+    accountName: 'Independent Retailers & Wholesale Group',
     valueAud: 140000,
     stage: 'Negotiation',
     probabilityPercent: 75,
@@ -97,10 +97,10 @@ export const SAMPLE_CRM_ACTIVITIES: CrmActivity[] = [
   {
     id: 'act-1',
     accountId: 'acc-1',
-    accountName: 'National Supermarket Network (Coles / Woolworths)',
+    accountName: 'Major Supermarkets & Chains (National Grocery)',
     type: 'Range Review',
-    subject: 'Q3 Range Review & ACCC Hiatus Audit',
-    notes: 'Verified 4-week hiatus compliance before locking W36 front-cover catalogue feature.',
+    subject: 'Q3 Range Review & Custom Hiatus Audit',
+    notes: 'Verified 4-week hiatus spacing before locking W36 front-cover catalogue feature.',
     date: '2026-08-10',
     status: 'Completed',
     userEmail: 'user@rangecraft.au'

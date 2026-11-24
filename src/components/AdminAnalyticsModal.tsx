@@ -181,42 +181,44 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-fade-in">
-      <div className={`relative w-full max-w-5xl rounded-3xl border shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] ${
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+      <div className={`relative w-full max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[92dvh] rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl overflow-hidden flex flex-col ${
         isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1422] border-[#1e2638] text-white'
       }`}>
         
         {/* Top Header Bar */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-emerald-600/15 via-blue-600/10 to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-600/30">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800 flex items-center justify-between gap-3 bg-gradient-to-r from-emerald-600/15 via-blue-600/10 to-transparent shrink-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 rounded-2xl bg-emerald-600 flex items-center justify-center text-white shadow-md shadow-emerald-600/30 shrink-0">
               <DollarSign className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 whitespace-nowrap">
                   Creator & Builder Command Center
                 </span>
-                <span className="text-xs text-slate-400 font-mono">
+                <span className="hidden sm:inline text-xs text-slate-400 font-mono truncate">
                   Owner: jzaf666@gmail.com
                 </span>
               </div>
-              <h2 className="text-lg sm:text-xl font-black tracking-tight mt-0.5">
+              <h2 className="text-base sm:text-xl font-black tracking-tight mt-0.5 truncate">
                 Passive Income, Analytics & Bank Payout Hub
               </h2>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors cursor-pointer"
+            aria-label="Close admin hub"
+            className="min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Real-time Earnings & User Snapshot Bar */}
-        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b text-xs ${
+        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 sm:p-4 border-b text-xs shrink-0 ${
           isLight ? 'bg-emerald-50/60 border-emerald-100 text-slate-800' : 'bg-[#0a0d14] border-[#1a2336] text-slate-200'
         }`}>
           <div>
@@ -253,12 +255,12 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
         </div>
 
         {/* Sub-Navigation Tabs */}
-        <div className={`flex items-center gap-2 px-6 pt-3 border-b text-xs font-semibold ${
+        <div className={`flex items-center gap-2 px-4 sm:px-6 pt-3 border-b text-xs font-semibold overflow-x-auto no-scrollbar shrink-0 ${
           isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#0f1422]'
         }`}>
           <button
             onClick={() => setActiveTab('revenue_payout')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeTab === 'revenue_payout'
                 ? 'border-emerald-500 text-emerald-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -270,7 +272,7 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
 
           <button
             onClick={() => setActiveTab('users_demographics')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeTab === 'users_demographics'
                 ? 'border-emerald-500 text-emerald-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -282,7 +284,7 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
 
           <button
             onClick={() => setActiveTab('sales_ledger')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeTab === 'sales_ledger'
                 ? 'border-emerald-500 text-emerald-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -294,7 +296,7 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
 
           <button
             onClick={() => setActiveTab('bank_settings')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeTab === 'bank_settings'
                 ? 'border-emerald-500 text-emerald-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -306,7 +308,7 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
         </div>
 
         {/* Scrollable Modal Content */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+        <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6 flex-1 min-h-0 text-xs">
           
           {/* ============================================================
               TAB 1: REVENUE & DIRECT PERSONAL BANK TRANSFER
@@ -316,7 +318,7 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
               
               {/* Payout Success Notice */}
               {payoutSuccessMessage && (
-                <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-3 animate-bounce">
+                <div className="p-4 rounded-2xl bg-emerald-500/15 border border-emerald-500/40 text-emerald-300 text-xs font-bold flex items-center gap-3">
                   <CheckCircle2 className="w-6 h-6 text-emerald-400 shrink-0" />
                   <div>{payoutSuccessMessage}</div>
                 </div>
@@ -860,16 +862,16 @@ export const AdminAnalyticsModal: React.FC<AdminAnalyticsModalProps> = ({
         </div>
 
         {/* Modal Bottom Actions Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
-          <div className="flex items-center gap-2 text-slate-400 text-[11px]">
-            <Lock className="w-3.5 h-3.5 text-emerald-400" />
-            <span>256-bit encrypted builder admin portal. Access restricted to creator account.</span>
+        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3 shrink-0">
+          <div className="flex items-center gap-2 text-slate-400 text-[11px] min-w-0">
+            <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+            <span className="truncate">256-bit encrypted builder admin portal. Access restricted to creator account.</span>
           </div>
 
           <button
             type="button"
             onClick={onClose}
-            className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer shadow"
+            className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-bold text-xs cursor-pointer shadow whitespace-nowrap shrink-0"
           >
             Close Admin Hub
           </button>

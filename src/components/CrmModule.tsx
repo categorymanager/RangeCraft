@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { formatAud } from '../utils/formatters';
 import { SAMPLE_CRM_ACCOUNTS, SAMPLE_CRM_DEALS, SAMPLE_CRM_ACTIVITIES } from '../data/crmInitialData';
+import { WorkspacePageHero } from './WorkspacePageHero';
 
 interface CrmModuleProps {
   accounts: CrmAccount[];
@@ -80,7 +81,7 @@ const PERSONA_LABELS: Record<BusinessPersona, { title: string; icon: any; descri
   retail_buyer: {
     title: 'Retail Category Buyer',
     icon: Users,
-    description: 'Audit supplier promotional calendars, verify ACCC hiatus rules, and negotiate supplier scan rebates.'
+    description: 'Audit supplier promotional calendars, verify Custom Rules hiatus spacing, and negotiate supplier scan rebates.'
   },
   distributor: {
     title: 'Wholesale Distributor',
@@ -261,58 +262,56 @@ export const CrmModule: React.FC<CrmModuleProps> = ({
   });
 
   return (
-    <div className={`max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 ${isLight ? 'text-slate-900' : 'text-slate-100'}`}>
+    <div className={`max-w-7xl mx-auto px-0 sm:px-4 space-y-6 ${isLight ? 'text-slate-900' : 'text-slate-100'}`}>
       
       {/* ----------------------------------------------------
-          1. HEADER & HIGH-LEVEL CRM KPIS
+          1. CENTERED CRM HERO & QUICK ACTIONS
       ---------------------------------------------------- */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-blue-950 text-blue-400 border border-blue-700">
-              Omni-Trade B2B CRM & Pipeline
-            </span>
-            <span className="text-xs text-slate-400 font-mono">
-              Persona: {PERSONA_LABELS[businessPersona].title}
-            </span>
-          </div>
-          <h1 className={`text-2xl sm:text-3xl font-black tracking-tight ${isLight ? 'text-slate-900' : 'text-white'}`}>
-            Consumer Goods & Retail CRM Hub
-          </h1>
-          <p className={`text-sm mt-1 max-w-2xl ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-            Connect your promotional calendar directly to retail buyers, marketplace partners, wholesale distributors, and independent shop accounts. Track pipeline revenue and supplier co-op funding.
-          </p>
-        </div>
-
-        {/* Quick Action CTAs */}
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            onClick={() => setIsNewAccountModalOpen(true)}
-            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-lg transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Add Partner Account</span>
-          </button>
-          <button
-            onClick={() => setIsNewDealModalOpen(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
-              isLight ? 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-            }`}
-          >
-            <Briefcase className="w-4 h-4 text-emerald-400" />
-            <span>New Commercial Deal</span>
-          </button>
-          <button
-            onClick={() => setIsNewActivityModalOpen(true)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl font-bold text-xs border transition-all cursor-pointer ${
-              isLight ? 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
-            }`}
-          >
-            <CalendarIcon className="w-4 h-4 text-purple-400" />
-            <span>Log Activity</span>
-          </button>
-        </div>
-      </div>
+      <WorkspacePageHero
+        stepLabel="Omni-Trade Relationships · B2B CRM"
+        title="Partner CRM & Trading Terms"
+        subtitle="Connect your 52-week promotional calendar directly to retail buyers, marketplace partners, wholesale distributors, and scan terms."
+        accent="blue"
+        currentTheme={currentTheme}
+        FallbackIcon={Building2}
+        metaStrip={
+          <span className="text-slate-500 dark:text-slate-400">
+            Active Persona: {PERSONA_LABELS[businessPersona].title}
+          </span>
+        }
+        actions={
+          <>
+            <button
+              type="button"
+              onClick={() => setIsNewAccountModalOpen(true)}
+              className="min-h-[44px] flex items-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-sm transition-all cursor-pointer whitespace-nowrap"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Add Partner Account</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsNewDealModalOpen(true)}
+              className={`min-h-[44px] flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs border transition-all cursor-pointer whitespace-nowrap ${
+                isLight ? 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              <Briefcase className="w-4 h-4 text-emerald-500" />
+              <span>New Commercial Deal</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsNewActivityModalOpen(true)}
+              className={`min-h-[44px] flex items-center gap-1.5 px-4 py-2 rounded-xl font-bold text-xs border transition-all cursor-pointer whitespace-nowrap ${
+                isLight ? 'bg-white hover:bg-slate-50 border-slate-300 text-slate-800' : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              <CalendarIcon className="w-4 h-4 text-purple-500" />
+              <span>Log Activity</span>
+            </button>
+          </>
+        }
+      />
 
       {/* KPI Stats Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
@@ -496,7 +495,7 @@ export const CrmModule: React.FC<CrmModuleProps> = ({
                 No Partner Accounts Found
               </h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto mb-5">
-                Your CRM is currently clean. You can add your own retail partner accounts (Coles, Woolworths, Metcash, Amazon) or load FMCG benchmark samples.
+                Your CRM is currently clean. You can add your own retail partner accounts (Major Supermarkets & Chains, Wholesale Groups, Online Marketplaces) or load FMCG benchmark samples.
               </p>
               <div className="flex items-center justify-center gap-3 flex-wrap">
                 <button

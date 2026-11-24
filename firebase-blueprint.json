@@ -1,0 +1,94 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered RangeCraft user profile, subscription entitlements, AI scenario credits, and B2B tax invoice details.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email", "maxLength": 254 },
+        "displayName": { "type": "string", "maxLength": 120 },
+        "firstName": { "type": "string", "maxLength": 80 },
+        "lastName": { "type": "string", "maxLength": 80 },
+        "phoneNumber": { "type": "string", "maxLength": 40 },
+        "companyName": { "type": "string", "maxLength": 160 },
+        "abn": { "type": "string", "maxLength": 32 },
+        "streetAddress": { "type": "string", "maxLength": 200 },
+        "houseNumber": { "type": "string", "maxLength": 40 },
+        "country": { "type": "string", "maxLength": 80 },
+        "acceptedTermsAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "jobRole": { "type": "string", "maxLength": 100 },
+        "subscriptionTier": {
+          "type": "string",
+          "enum": ["free_trial", "starter_plan", "pro_planner", "enterprise_tier"]
+        },
+        "subscriptionStatus": {
+          "type": "string",
+          "enum": ["active", "trialing", "past_due", "cancelled"]
+        },
+        "aiGenerationsRemaining": { "type": "number" },
+        "aiMonthlyAllowance": { "type": "number" },
+        "aiTopUpCredits": { "type": "number" },
+        "unlimitedAi": { "type": "boolean" },
+        "canExportPdf": { "type": "boolean" },
+        "canAutoReslot": { "type": "boolean" },
+        "maxSkusAllowed": { "type": "number" },
+        "unlockedExports": { "type": "array" },
+        "trialExpiresAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "trialUsed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time", "maxLength": 64 },
+        "lastLoginAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["uid", "email", "displayName", "subscriptionTier", "subscriptionStatus"]
+    },
+    "PromoPlan": {
+      "title": "PromoPlan",
+      "description": "User's 52-week promotional calendar snapshot.",
+      "type": "object",
+      "properties": {
+        "promotions": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["promotions", "updatedAt"]
+    },
+    "SkuCatalogList": {
+      "title": "SkuCatalogList",
+      "description": "User's saved SKU product ranges and catalogs.",
+      "type": "object",
+      "properties": {
+        "catalogs": { "type": "array" },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["catalogs", "updatedAt"]
+    },
+    "ProductItem": {
+      "title": "ProductItem",
+      "description": "Individual product SKU specification stored in user subcollection.",
+      "type": "object",
+      "properties": {
+        "sku": { "type": "string", "maxLength": 64 },
+        "name": { "type": "string", "maxLength": 160 },
+        "updatedAt": { "type": "string", "format": "date-time", "maxLength": 64 }
+      },
+      "required": ["sku", "name"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Stores user subscription entitlements, AI top-up credits, unlocked exports, and B2B tax invoice registration details."
+    },
+    "/users/{userId}/plans/{planId}": {
+      "schema": { "$ref": "#/entities/PromoPlan" },
+      "description": "Stores the user's saved 52-week promotional schedule."
+    },
+    "/users/{userId}/catalogs/{catalogId}": {
+      "schema": { "$ref": "#/entities/SkuCatalogList" },
+      "description": "Stores the user's SKU product catalogs."
+    },
+    "/users/{userId}/products/{productId}": {
+      "schema": { "$ref": "#/entities/ProductItem" },
+      "description": "Stores user product SKU definitions."
+    }
+  }
+}

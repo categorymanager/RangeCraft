@@ -70,14 +70,14 @@ export interface Product {
   seasonalPeak: string; // e.g. "Summer / Australia Day", "Winter Warmers", "All Year"
   targetWeeks: number[]; // Recommended promotional week numbers in AU calendar
   tags: string[];
-  stockLevel: number;
+  stockLevel?: number;
   competitorBenchmark?: {
     competitor: string;
     typicalPromoMechanic: string;
     typicalPromoPriceAud: number;
   };
   supplierCoOpEligible?: boolean;
-  minPromoGapWeeks: number; // ACCC / baseline protection hiatus (e.g. 4-6 weeks)
+  minPromoGapWeeks: number; // Custom rule / baseline protection hiatus (e.g. 4-6 weeks)
   minMarginPercent?: number; // Minimum acceptable margin %
   maxDiscountDepthPercent?: number; // Max discount depth %
   targetVolumeLiftPercent?: number; // Target lift %
@@ -182,7 +182,12 @@ export interface MarketIntelligenceReport {
 
 export type AppTab = 
   | 'overview' 
+  | 'dashboard'
+  | 'promotion-builder'
+  | 'commercial-insights'
   | 'commercial-journey'
+  | 'directory'
+  | 'wholesale'
   | 'calendar' 
   | 'week-studio' 
   | 'catalog' 
@@ -205,12 +210,12 @@ export interface ActivityLogEntry {
   userEmail?: string;
 }
 
-export type SubscriptionTier = 'free_trial' | 'pro_planner' | 'enterprise_tier';
+export type SubscriptionTier = 'free_trial' | 'starter_plan' | 'pro_planner' | 'enterprise_tier';
 
 export type AiAgentSuite = 
   | 'range-diagnostics' // 1. Range Diagnostics Suite (SKU Health Scoring, Margin Analyzer, Deletion Engine)
   | 'omni-crm'           // 2. Omni-Trade CRM Suite (Account Pipeline, Trade Spend Tracker, Buyer Dossiers)
-  | 'master-trade'       // 3. 52-Week Master Trade Suite (52-Week Grid, ACCC Hiatus Guard, Retail Calendar)
+  | 'master-trade'       // 3. 52-Week Master Trade Suite (52-Week Grid, Custom Hiatus Guard, Retail Calendar)
   | 'week-pitch';        // 4. Week Studio & Pitch Suite (Breakeven Simulator, Cross-Merch Basket Builder, Pitch Generator)
 
 export type ExportUnlockType = 
@@ -224,19 +229,68 @@ export interface UserProfile {
   uid: string;
   email: string;
   displayName: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
   companyName?: string;
+  abn?: string;
+  streetAddress?: string;
+  houseNumber?: string;
+  country?: string;
+  acceptedTermsAt?: string;
   jobRole?: string;
   subscriptionTier: SubscriptionTier;
   subscriptionStatus: 'active' | 'trialing' | 'past_due' | 'cancelled';
   aiGenerationsRemaining: number;
+  aiMonthlyAllowance?: number;
+  aiTopUpCredits?: number;
   unlimitedAi: boolean;
   canExportPdf: boolean;
   canAutoReslot: boolean;
   maxSkusAllowed: number;
   unlockedExports?: string[]; // IDs of single pay-per-export items unlocked ($19 each)
   trialExpiresAt?: string;
+  trialUsed?: boolean;
   createdAt: string;
   lastLoginAt: string;
+}
+
+export type CheckoutPlanType =
+  | 'single_export'
+  | 'starter_subscription'
+  | 'pro_subscription'
+  | 'enterprise_subscription'
+  | 'ai_topup'
+  | 'one_off_service';
+
+export interface CheckoutContext {
+  isOpen: boolean;
+  exportId: string;
+  itemName: string;
+  priceAud: number;
+  planType: CheckoutPlanType;
+  billingCycle?: 'monthly' | 'annual';
+  excludesGst?: boolean;
+  returnTab: AppTab;
+}
+
+export interface WholesaleOrder {
+  id: string;
+  poNumber: string;
+  accountName: string;
+  sku: string;
+  productName: string;
+  cartons: number;
+  unitsPerCarton: number;
+  baseCartonCostAud: number;
+  volumeDiscountPercent: number;
+  netCartonCostAud: number;
+  totalAud: number;
+  paymentTerms: string;
+  storeBreakevenUnits: number;
+  deadNetMarginPercent: number;
+  status: 'Confirmed' | 'Dispatched' | 'Settled';
+  orderDate: string;
 }
 
 export interface PricingPlan {
@@ -416,7 +470,7 @@ export interface CreatorTransaction {
   userName: string;
   companyName: string;
   itemDescription: string;
-  itemType: 'subscription_monthly' | 'subscription_annual' | OneOffServiceType;
+  itemType: 'subscription_monthly' | 'subscription_annual' | 'ai_topup' | OneOffServiceType;
   amountAud: number;
   paymentMethod: 'paypal' | 'credit_card' | 'bank_transfer';
   paypalTransactionId?: string;

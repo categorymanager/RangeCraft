@@ -38,7 +38,7 @@ export const WORKFLOW_STEPS: StepConfig[] = [
   {
     id: 'step-3',
     stepNum: 3,
-    label: 'Compliance & ACCC Hiatus Radar',
+    label: 'Compliance & Custom Rules Radar',
     shortLabel: 'Compliance Radar',
     tab: 'clashes',
     description: 'Audit 4-week hiatus breaches & retail scan fines'
@@ -68,9 +68,17 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
 }) => {
   const isLight = currentTheme.includes('light');
 
+  const shouldHide =
+    currentTab === 'overview' ||
+    currentTab === 'directory' ||
+    currentTab === 'wholesale' ||
+    currentTab === 'billing' ||
+    currentTab === 'crm' ||
+    currentTab === 'activity-log';
+
   // Determine current active step index (0 to 4)
   const currentStepIndex = WORKFLOW_STEPS.findIndex(s => s.tab === currentTab);
-  
+
   // If user is on a sub-view (e.g. week-studio, crm, billing, catalog), map to nearest logical step
   const effectiveIndex = currentStepIndex !== -1 
     ? currentStepIndex 
@@ -84,6 +92,8 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
 
   // Keyboard shortcut support (Alt + ArrowLeft / Alt + ArrowRight)
   useEffect(() => {
+    if (shouldHide) return;
+
     const handleKeyDown = (e: KeyboardEvent) => {
       // Don't trigger if typing in input/textarea/select
       if (['INPUT', 'TEXTAREA', 'SELECT'].includes((e.target as HTMLElement)?.tagName)) {
@@ -100,14 +110,20 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [prevStep, nextStep, onSelectTab]);
+  }, [shouldHide, prevStep, nextStep, onSelectTab]);
+
+  // Hide floating step navigation paddles on non-stepper hubs & landing page
+  if (shouldHide) {
+    return null;
+  }
 
   return (
-    <>
+    <div className="hidden md:block">
       {/* LEFT FLOATING PADDLE: PREVIOUS STEP */}
       <AnimatePresence>
         {prevStep && (
           <motion.div
+            key="floating-prev-paddle"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: -20 }}
@@ -144,6 +160,7 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
       <AnimatePresence>
         {nextStep && (
           <motion.div
+            key="floating-next-paddle"
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             exit={{ opacity: 0, x: 20 }}
@@ -157,14 +174,14 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
                   ? 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500 hover:shadow-indigo-500/30' 
                   : 'bg-indigo-600 border-indigo-500 text-white hover:bg-indigo-500 hover:shadow-indigo-500/40'
               }`}
-              title={`Next: Step ${nextStep.stepNum} - ${nextStep.label} (Alt + →)`}
+              title={effectiveIndex === 0 ? `Get Started: Step ${nextStep.stepNum} - ${nextStep.label} (Alt + →)` : `Next: Step ${nextStep.stepNum} - ${nextStep.label} (Alt + →)`}
             >
               <div className="hidden lg:flex flex-col text-right leading-tight pl-1 max-w-[130px] group-hover:max-w-[190px] transition-all overflow-hidden">
                 <span className="text-[10px] uppercase font-black tracking-wider text-indigo-200">
-                  Next Step {nextStep.stepNum}
+                  {effectiveIndex === 0 ? 'Get Started' : `Next Step ${nextStep.stepNum}`}
                 </span>
                 <span className="text-xs font-bold truncate">
-                  {nextStep.shortLabel}
+                  {effectiveIndex === 0 ? nextStep.shortLabel : nextStep.shortLabel}
                 </span>
               </div>
 
@@ -175,6 +192,6 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
           </motion.div>
         )}
       </AnimatePresence>
-    </>
+    </div>
   );
 };

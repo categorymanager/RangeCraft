@@ -14,9 +14,15 @@ declare global {
   }
 }
 
-// Environment Configurations
-export const GA4_MEASUREMENT_ID = ((import.meta as any).env?.VITE_GA4_MEASUREMENT_ID as string) || 'G-KZNE8P2GRJ';
-export const CLARITY_PROJECT_ID = ((import.meta as any).env?.VITE_CLARITY_PROJECT_ID as string) || 'q4v9x2k8l1';
+// Environment Configurations - properly robust resolution of VITE_GA4_MEASUREMENT_ID
+export const GA4_MEASUREMENT_ID = 
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_GA4_MEASUREMENT_ID) ||
+  (typeof process !== 'undefined' && (process.env as any)?.VITE_GA4_MEASUREMENT_ID) ||
+  'G-KZNE8P2GRJ';
+
+export const CLARITY_PROJECT_ID = 
+  (typeof import.meta !== 'undefined' && (import.meta as any).env?.VITE_CLARITY_PROJECT_ID) ||
+  'q4v9x2k8l1';
 
 let isInitialized = false;
 
@@ -154,7 +160,7 @@ export function trackBeginCheckout(
 }
 
 /**
- * 4. Track Conversion Funnel: Purchase Complete
+ * 4. Track Conversion Funnel: Purchase Complete (logs 'purchase')
  */
 export function trackPurchaseSuccess(
   exportId: string,
@@ -182,7 +188,29 @@ export function trackPurchaseSuccess(
 }
 
 /**
- * 5. Track Real File Downloads (PDF / Excel / CSV)
+ * 5. Track Subscription Upgrade (logs 'subscription_upgrade')
+ */
+export function trackSubscriptionUpgrade(planType: string, priceAud: number, userTier: string): void {
+  trackEvent('subscription_upgrade', {
+    plan_type: planType,
+    value: priceAud,
+    currency: 'AUD',
+    user_tier: userTier
+  });
+}
+
+/**
+ * 6. Track Module Access (logs 'module_access')
+ */
+export function trackModuleAccess(moduleName: string, userTier: string): void {
+  trackEvent('module_access', {
+    module_name: moduleName,
+    user_tier: userTier
+  });
+}
+
+/**
+ * 7. Track Real File Downloads (PDF / Excel / CSV)
  */
 export function trackExportDownload(exportType: string, format: 'xlsx' | 'pdf' | 'csv' | 'pptx', filename: string): void {
   trackEvent('file_download', {
@@ -193,7 +221,7 @@ export function trackExportDownload(exportType: string, format: 'xlsx' | 'pdf' |
 }
 
 /**
- * 6. Set User Identity & Session Tags for Clarity & GA4
+ * 8. Set User Identity & Session Tags for Clarity & GA4
  */
 export function setUserAnalyticsContext(userId: string, tier: string, company?: string): void {
   try {

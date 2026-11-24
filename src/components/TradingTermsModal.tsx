@@ -109,7 +109,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
   const [status, setStatus] = useState<TradingTermsStatus>('Signed & Binding');
   const [effectiveFrom, setEffectiveFrom] = useState('2026-01-01');
   const [effectiveTo, setEffectiveTo] = useState('2026-12-31');
-  const [notes, setNotes] = useState('Binding joint business planning terms. Verified against ACCC 4-week hiatus baseline protection rules.');
+  const [notes, setNotes] = useState('Binding joint business planning terms. Verified against Custom Rules 4-week hiatus baseline protection.');
 
   // Sync state whenever modal opens or terms/account prop changes
   React.useEffect(() => {
@@ -141,7 +141,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
         setStatus(activeTerms.status || 'Signed & Binding');
         setEffectiveFrom(activeTerms.effectiveFrom || '2026-01-01');
         setEffectiveTo(activeTerms.effectiveTo || '2026-12-31');
-        setNotes(activeTerms.notes || 'Binding joint business planning terms. Verified against ACCC 4-week hiatus baseline protection rules.');
+        setNotes(activeTerms.notes || 'Binding joint business planning terms. Verified against Custom Rules 4-week hiatus baseline protection.');
       } else {
         const defaultAcc = preselectedAccount || accounts[0];
         setTitle(defaultAcc ? `${defaultAcc.name} Master Trading Agreement FY26` : 'National Retail Trading Terms Agreement FY26');
@@ -170,7 +170,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
         setStatus('Signed & Binding');
         setEffectiveFrom('2026-01-01');
         setEffectiveTo('2026-12-31');
-        setNotes('Binding joint business planning terms. Verified against ACCC 4-week hiatus baseline protection rules.');
+        setNotes('Binding joint business planning terms. Verified against Custom Rules 4-week hiatus baseline protection.');
       }
     }
   }, [isOpen, activeTerms, preselectedAccount, accounts]);
@@ -365,23 +365,23 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md overflow-y-auto animate-fade-in">
-      <div className={`relative w-full max-w-5xl rounded-3xl border shadow-2xl overflow-hidden my-6 flex flex-col max-h-[92vh] ${
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+      <div className={`relative w-full max-w-5xl h-[100dvh] sm:h-auto sm:max-h-[92dvh] rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl overflow-hidden flex flex-col ${
         isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1422] border-[#1e2638] text-white'
       }`}>
         
         {/* Top Header Bar */}
-        <div className="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-gradient-to-r from-blue-600/15 via-purple-600/10 to-transparent">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-600/30">
+        <div className="px-4 sm:px-6 py-3.5 sm:py-4 border-b border-slate-800 flex items-center justify-between gap-3 bg-gradient-to-r from-blue-600/15 via-purple-600/10 to-transparent shrink-0">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-10 h-10 rounded-2xl bg-blue-600 flex items-center justify-center text-white shadow-md shadow-blue-600/30 shrink-0">
               <FileText className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30 whitespace-nowrap">
                   Australian Retail Trading Terms
                 </span>
-                <span className={`text-xs px-2 py-0.5 rounded-full font-bold ${
+                <span className={`text-xs px-2 py-0.5 rounded-full font-bold whitespace-nowrap ${
                   status === 'Signed & Binding' 
                     ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' 
                     : 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
@@ -389,22 +389,24 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
                   {status}
                 </span>
               </div>
-              <h2 className="text-lg sm:text-xl font-black tracking-tight mt-0.5">
+              <h2 className="text-base sm:text-xl font-black tracking-tight mt-0.5 truncate">
                 {terms ? 'Edit Commercial Trading Terms Agreement' : 'New Retail Trading Terms & Margin Structure'}
               </h2>
             </div>
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors cursor-pointer"
+            aria-label="Close trading terms modal"
+            className="min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Live Calculation Metric Bar */}
-        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 p-4 border-b text-xs ${
+        <div className={`grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 sm:p-4 border-b text-xs shrink-0 ${
           isLight ? 'bg-blue-50/60 border-blue-100 text-slate-800' : 'bg-[#0d101a] border-[#1a2336] text-slate-200'
         }`}>
           <div>
@@ -440,12 +442,12 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
         </div>
 
         {/* Sub-Navigation Tabs */}
-        <div className={`flex items-center gap-2 px-6 pt-3 border-b text-xs font-semibold ${
+        <div className={`flex items-center gap-2 px-4 sm:px-6 pt-3 border-b text-xs font-semibold overflow-x-auto no-scrollbar shrink-0 ${
           isLight ? 'border-slate-200 bg-white' : 'border-slate-800 bg-[#0f1422]'
         }`}>
           <button
             onClick={() => setActiveSubTab('scope_base')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeSubTab === 'scope_base'
                 ? 'border-blue-500 text-blue-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -457,7 +459,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
 
           <button
             onClick={() => setActiveSubTab('over_above')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeSubTab === 'over_above'
                 ? 'border-blue-500 text-blue-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -469,7 +471,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
 
           <button
             onClick={() => setActiveSubTab('volume_incentive')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeSubTab === 'volume_incentive'
                 ? 'border-blue-500 text-blue-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -481,7 +483,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
 
           <button
             onClick={() => setActiveSubTab('summary_export')}
-            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 ${
+            className={`pb-2.5 px-3 border-b-2 transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
               activeSubTab === 'summary_export'
                 ? 'border-blue-500 text-blue-400 font-bold'
                 : 'border-transparent text-slate-400 hover:text-slate-200'
@@ -493,7 +495,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
         </div>
 
         {/* Modal Scrollable Content Body */}
-        <div className="p-6 overflow-y-auto space-y-6 flex-1 text-xs">
+        <div className="p-4 sm:p-6 overflow-y-auto overscroll-contain space-y-6 flex-1 min-h-0 text-xs">
           
           {/* ============================================================
               TAB 1: TARGET PARTNER & SKU SCOPE (SELECT ALL / CATEGORY / SKU)
@@ -594,11 +596,11 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
                   </div>
 
                   {/* 3 Scope Options */}
-                  <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0">
+                  <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 shrink-0 max-w-full overflow-x-auto no-scrollbar">
                     <button
                       type="button"
                       onClick={() => setSkuScope('all_skus')}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         skuScope === 'all_skus'
                           ? 'bg-blue-600 text-white shadow'
                           : 'text-slate-400 hover:text-white'
@@ -609,7 +611,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setSkuScope('category')}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         skuScope === 'category'
                           ? 'bg-blue-600 text-white shadow'
                           : 'text-slate-400 hover:text-white'
@@ -620,7 +622,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
                     <button
                       type="button"
                       onClick={() => setSkuScope('selected_skus')}
-                      className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                         skuScope === 'selected_skus'
                           ? 'bg-blue-600 text-white shadow'
                           : 'text-slate-400 hover:text-white'
@@ -1128,7 +1130,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
                 <div className="text-[11px] text-slate-400 border-t border-slate-800 pt-3 flex items-center justify-between">
                   <div className="flex items-center gap-1.5">
                     <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                    <span>ACCC 4-Week Hiatus & Australian Consumer Law Section 18/29 Compliant</span>
+                    <span>Custom Rules 4-Week Hiatus & Baseline Protection Verified</span>
                   </div>
                   <div className="font-mono text-[10px]">
                     Contract Signee: {contactName}
@@ -1163,11 +1165,11 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
         </div>
 
         {/* Modal Bottom Actions Footer */}
-        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3 shrink-0">
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl text-slate-400 hover:text-white font-bold text-xs cursor-pointer"
+            className="px-4 py-2 rounded-xl text-slate-400 hover:text-white font-bold text-xs cursor-pointer whitespace-nowrap"
           >
             Cancel
           </button>
@@ -1176,7 +1178,7 @@ export const TradingTermsModal: React.FC<TradingTermsModalProps> = ({
             <button
               type="button"
               onClick={handleSave}
-              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer"
+              className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all cursor-pointer whitespace-nowrap"
             >
               <Check className="w-4 h-4" />
               <span>Save Trading Terms Agreement</span>

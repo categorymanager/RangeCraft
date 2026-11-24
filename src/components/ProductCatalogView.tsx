@@ -1,12 +1,20 @@
-import React, { useState, useMemo } from 'react';
-import { Product, PerformanceTier, ThemeMode, WeekPromotion, SkuCatalog } from '../types';
+import React, { useState, useMemo, useEffect } from 'react';
+import { AppTab, Product, PerformanceTier, ThemeMode, WeekPromotion, SkuCatalog, UserProfile } from '../types';
 import { 
   exportProductsToCsv, 
   generateProductCsvTemplate, 
   analyzeProductRangePortfolio 
 } from '../utils/csvHelpers';
+import {
+  buildSkuPromoDemandMap,
+  computeSkuInventoryForecast,
+  normalizeOptionalStock,
+} from '../utils/inventoryForecast';
 import { ScanRebateMarginSimulator } from './ScanRebateMarginSimulator';
-import { formatAud, formatNumber, formatPercent } from '../utils/formatters';
+import { SkuDeletionEngineView } from './SkuDeletionEngineView';
+import { WorkspacePageHero } from './WorkspacePageHero';
+import rangeInventoryHeroImg from '../assets/images/range_inventory_hero_1795341506551.jpg';
+import { formatAud, formatNumber } from '../utils/formatters';
 import { 
   Plus, 
   Search, 
@@ -15,39 +23,35 @@ import {
   Package, 
   Layers, 
   CheckCircle2, 
-  AlertCircle,
   FileSpreadsheet,
   TrendingUp,
   Percent,
   Sparkles,
-  BarChart3,
-  Filter,
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Trash2,
   FolderEdit,
-  CheckSquare,
-  Square,
-  ChevronDown,
-  ChevronUp,
+  ChevronRight,
   RotateCcw,
   X,
   SlidersHorizontal,
-  DollarSign,
-  Calendar,
-  Eye,
   ShieldCheck,
   AlertTriangle,
   Tag,
-  Check,
   FolderPlus,
   Copy,
   Edit3,
   Boxes,
   Store,
-  Undo2
+  Undo2,
+  Calculator,
+  HeartPulse,
+  Wrench,
+  Check
 } from 'lucide-react';
+
+export type RangeSubTab = 'catalog' | 'health' | 'simulator';
 
 interface ProductCatalogViewProps {
   products: Product[];
@@ -59,13 +63,19 @@ interface ProductCatalogViewProps {
   onUpdateCatalog?: (catalog: SkuCatalog) => void;
   onDeleteCatalog?: (catalogId: string) => void;
   onAddProduct: (product: Product) => void;
+  onUpdateProduct?: (product: Product) => void;
   onImportProducts: (products: Product[]) => void;
   onDeleteProduct?: (sku: string) => void;
   onDeleteMultipleProducts?: (skus: string[]) => void;
   onClearAllProducts?: () => void;
   onOpenUploadModal: () => void;
   onAutoGeneratePlanFromRange: () => void;
+  onUnlockExport?: (exportId: string, itemName: string, priceAud: number) => void;
+  onOpenPricingModal?: () => void;
+  userProfile?: UserProfile | null;
+  initialSubTab?: RangeSubTab;
   currentTheme: ThemeMode;
+  onSelectTab?: (tab: AppTab) => void;
 }
 
 export type SortField = 
@@ -108,15 +118,42 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
   onUpdateCatalog,
   onDeleteCatalog,
   onAddProduct,
+  onUpdateProduct,
   onImportProducts,
   onDeleteProduct,
   onDeleteMultipleProducts,
   onClearAllProducts,
   onOpenUploadModal,
   onAutoGeneratePlanFromRange,
+  onUnlockExport,
+  onOpenPricingModal,
+  userProfile,
+  initialSubTab = 'catalog',
   currentTheme,
+  onSelectTab,
 }) => {
   const isLight = currentTheme.includes('light');
+
+  // 0. Segmented Sub-Tab & Drawer State
+  const [rangeSubTab, setRangeSubTab] = useState<RangeSubTab>(initialSubTab);
+  const [isToolsDrawerOpen, setIsToolsDrawerOpen] = useState(false);
+  const [isFilterSortSheetOpen, setIsFilterSortSheetOpen] = useState(false);
+  const [inspectedSku, setInspectedSku] = useState<Product | null>(null);
+  const [editingStockSku, setEditingStockSku] = useState<string | null>(null);
+  const [editingStockDraft, setEditingStockDraft] = useState<string>('');
+  const [drawerStockDraft, setDrawerStockDraft] = useState<string>('');
+
+  useEffect(() => {
+    setRangeSubTab(initialSubTab);
+  }, [initialSubTab]);
+
+  useEffect(() => {
+    setDrawerStockDraft(
+      inspectedSku?.stockLevel !== undefined && inspectedSku?.stockLevel !== null
+        ? String(inspectedSku.stockLevel)
+        : ''
+    );
+  }, [inspectedSku]);
 
   // 1. Filter State
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,7 +179,6 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
   const [toast, setToast] = useState<{ message: string; onUndo?: () => void } | null>(null);
   const [previousProducts, setPreviousProducts] = useState<Product[] | null>(null);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [expandedSkus, setExpandedSkus] = useState<string[]>([]);
 
   // Deletion Confirmation Modals
   const [skuToDelete, setSkuToDelete] = useState<Product | null>(null);
@@ -183,6 +219,7 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
   const [newPerformanceTier, setNewPerformanceTier] = useState<PerformanceTier>('tier1_hero');
   const [newSeasonalPeak, setNewSeasonalPeak] = useState('Summer / Australia Day');
   const [newMinHiatus, setNewMinHiatus] = useState('4');
+  const [newStockLevel, setNewStockLevel] = useState('');
   const [newCoOpEligible, setNewCoOpEligible] = useState(true);
   const [newTags, setNewTags] = useState('Australia Day, Hero, Volume');
 
@@ -191,9 +228,25 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
     return catalogs.find(c => c.id === activeCatalogId) || catalogs[0] || null;
   }, [catalogs, activeCatalogId]);
 
-  const toggleExpandSku = (sku: string) => {
-    setExpandedSkus(prev => prev.includes(sku) ? prev.filter(s => s !== sku) : [...prev, sku]);
-  };
+  // Quick Health Flag Count for Segmented Health Review Badge
+  const healthFlaggedCount = useMemo(() => {
+    return products.filter(p => {
+      const margin = p.marginPercent;
+      const units = p.weeklyUnitsBaseline;
+      let score = 50;
+      if (margin >= 50) score += 25;
+      else if (margin >= 35) score += 10;
+      else if (margin < 25) score -= 25;
+      else score -= 10;
+      if (units >= 150) score += 20;
+      else if (units >= 50) score += 5;
+      else if (units <= 15) score -= 20;
+      if (p.supplierCoOpEligible) score += 10;
+      else score -= 5;
+      const finalScore = Math.min(100, Math.max(0, Math.round(score)));
+      return finalScore < 40 || (margin < 20 && units < 30);
+    }).length;
+  }, [products]);
 
   const showToast = (message: string, onUndo?: () => void) => {
     setToast({ message, onUndo });
@@ -218,11 +271,11 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
     return Array.from(new Set(relevant.map(p => p.subcategory).filter(Boolean))).sort();
   }, [products, selectedCategory]);
 
-  const allTags = useMemo(() => Array.from(new Set(products.flatMap(p => p.tags).filter(Boolean))).sort(), [products]);
   const allSeasonalPeaks = useMemo(() => Array.from(new Set(products.map(p => p.seasonalPeak).filter(Boolean))).sort(), [products]);
   const portfolioAnalysis = useMemo(() => analyzeProductRangePortfolio(products), [products]);
+  const skuPromoDemandMap = useMemo(() => buildSkuPromoDemandMap(products, promotions), [products, promotions]);
 
-  // Compute Promotional Performance & ACCC Hiatus Stats Per SKU
+  // Compute Promotional Performance & Custom Rules Hiatus Stats Per SKU
   const skuPromoStatsMap = useMemo<Record<string, SkuPromoStats>>(() => {
     const stats: Record<string, SkuPromoStats> = {};
 
@@ -344,7 +397,7 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       // Seasonal Peak Filter
       if (seasonalPeakFilter !== 'ALL' && p.seasonalPeak !== seasonalPeakFilter) return false;
 
-      // ACCC Hiatus Status Filter
+      // Custom Rules Hiatus Status Filter
       if (hiatusStatusFilter === 'compliant' && stats && stats.isClashingHiatus) return false;
       if (hiatusStatusFilter === 'clashing' && (!stats || !stats.isClashingHiatus)) return false;
 
@@ -398,8 +451,8 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
           valB = b.weeklyUnitsBaseline * b.rrp * 52;
           break;
         case 'stockLevel':
-          valA = a.stockLevel || 0;
-          valB = b.stockLevel || 0;
+          valA = typeof a.stockLevel === 'number' ? a.stockLevel : -1;
+          valB = typeof b.stockLevel === 'number' ? b.stockLevel : -1;
           break;
         case 'promoWeeksCount':
           valA = statsA ? statsA.plannedWeeksCount : 0;
@@ -772,7 +825,7 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
   const handleConfirmDeleteCatalog = () => {
     if (!catalogToDelete) return;
     if (catalogs.length <= 1) {
-      alert("You must keep at least one SKU range catalog.");
+      showToast("You must keep at least one SKU range catalog.");
       setCatalogToDelete(null);
       return;
     }
@@ -809,12 +862,40 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
     document.body.removeChild(link);
   };
 
+  // Inline & Inspector Stock Edit Handler (preserves blank/undefined as unconstrained supply)
+  const handleSaveInlineStock = (product: Product, rawValue: string) => {
+    const normalized = normalizeOptionalStock(rawValue);
+    const updated: Product = { ...product };
+    if (normalized !== undefined) {
+      updated.stockLevel = normalized;
+    } else {
+      delete updated.stockLevel;
+    }
+
+    if (onUpdateProduct) {
+      onUpdateProduct(updated);
+    } else {
+      onImportProducts(products.map(item => (item.sku === product.sku ? updated : item)));
+    }
+
+    if (inspectedSku?.sku === product.sku) {
+      setInspectedSku(updated);
+    }
+    setEditingStockSku(null);
+    showToast(
+      normalized === undefined
+        ? `${product.sku} inventory cleared (unconstrained supply).`
+        : `Updated ${product.sku} stock to ${formatNumber(normalized)} units.`
+    );
+  };
+
   // Create Product Submit
   const handleCreateProduct = (e: React.FormEvent) => {
     e.preventDefault();
     const rrpNum = parseFloat(newRrp) || 29.99;
     const costNum = parseFloat(newCost) || 12.00;
     const margin = Number((((rrpNum - costNum) / rrpNum) * 100).toFixed(1));
+    const parsedStock = normalizeOptionalStock(newStockLevel);
 
     const product: Product = {
       sku: newSku || `SKU-CUST-${Date.now().toString().slice(-4)}`,
@@ -829,37 +910,134 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       seasonalPeak: newSeasonalPeak,
       targetWeeks: [4, 18, 34, 47],
       tags: newTags.split(',').map(t => t.trim()).filter(Boolean),
-      stockLevel: 1200,
       minPromoGapWeeks: parseInt(newMinHiatus) || 4,
-      supplierCoOpEligible: newCoOpEligible
+      supplierCoOpEligible: newCoOpEligible,
+      ...(parsedStock !== undefined ? { stockLevel: parsedStock } : {}),
     };
 
     onAddProduct(product);
+    setNewStockLevel('');
+    setNewSku('');
+    setNewName('');
     setIsAddModalOpen(false);
     showToast(`Added SKU ${product.sku} to range.`);
   };
 
-  // Helper render sort indicator
   const renderSortIndicator = (field: SortField) => {
     if (sortBy === field) {
-      return sortOrder === 'asc' 
+      return sortOrder === 'asc'
         ? <ArrowUp className="w-3.5 h-3.5 text-blue-500 inline ml-1 flex-shrink-0" />
         : <ArrowDown className="w-3.5 h-3.5 text-blue-500 inline ml-1 flex-shrink-0" />;
     }
     return <ArrowUpDown className="w-3 h-3 text-slate-400 group-hover:text-slate-600 inline ml-1 opacity-60 flex-shrink-0" />;
   };
 
+  const sortLabelMap: Record<SortField, string> = {
+    sku: 'SKU Code',
+    name: 'Product Name',
+    category: 'Category',
+    subcategory: 'Subcategory',
+    rrp: 'RRP ($)',
+    cost: 'Unit Cost',
+    margin: 'Margin %',
+    marginDollars: 'Margin $',
+    units: 'Weekly Units',
+    annualBaselineRev: 'Annual Base Val',
+    stockLevel: 'Stock Level',
+    promoWeeksCount: 'Promo Weeks',
+    projectedPromoRevenue: '52-Wk Promo Rev',
+    projectedPromoUnits: 'Promo Units',
+    projectedPromoMargin: 'Promo Margin',
+    promoLift: 'Promo Lift',
+    minHiatus: 'Hiatus Gap',
+  };
+
+  const getTierShortLabel = (tier: PerformanceTier) => {
+    switch (tier) {
+      case 'tier1_hero':
+        return 'Tier 1 Hero';
+      case 'tier2_margin':
+        return 'Tier 2 Margin';
+      case 'tier3_niche':
+        return 'Tier 3 Niche';
+      case 'tier4_clearance':
+        return 'Tier 4 Clearance';
+      default:
+        return 'Standard';
+    }
+  };
+
+  const getSkuHealthSummary = (p: Product) => {
+    const promoStats = skuPromoStatsMap[p.sku];
+    const promoWeeks = promoStats?.plannedWeeksCount || 0;
+    const riskFactors: string[] = [];
+    const opportunityFactors: string[] = [];
+    let score = 50;
+
+    if (p.marginPercent >= 50) {
+      score += 25;
+      opportunityFactors.push(`High margin (${p.marginPercent.toFixed(1)}%) protects gross profit`);
+    } else if (p.marginPercent >= 35) {
+      score += 10;
+      opportunityFactors.push(`Healthy margin benchmark (${p.marginPercent.toFixed(1)}%)`);
+    } else if (p.marginPercent < 25) {
+      score -= 25;
+      riskFactors.push(`Margin (${p.marginPercent.toFixed(1)}%) below 25% floor`);
+    } else {
+      score -= 10;
+      riskFactors.push(`Thin margin (${p.marginPercent.toFixed(1)}%)`);
+    }
+
+    if (p.weeklyUnitsBaseline >= 150) {
+      score += 20;
+      opportunityFactors.push(`Strong baseline velocity (${p.weeklyUnitsBaseline} u/wk)`);
+    } else if (p.weeklyUnitsBaseline >= 50) {
+      score += 5;
+    } else if (p.weeklyUnitsBaseline <= 15) {
+      score -= 20;
+      riskFactors.push(`Slow baseline velocity (${p.weeklyUnitsBaseline} u/wk)`);
+    }
+
+    if (p.supplierCoOpEligible) {
+      score += 10;
+      opportunityFactors.push('Vendor scan rebate funding eligible');
+    } else {
+      score -= 5;
+      riskFactors.push('No vendor co-op rebate support');
+    }
+
+    if (promoWeeks > 8) {
+      score -= 10;
+      riskFactors.push(`Over-promoted (${promoWeeks} wks)`);
+    } else if (promoWeeks === 0 && p.weeklyUnitsBaseline < 30) {
+      score -= 15;
+      riskFactors.push('Unpromoted gap SKU with low baseline volume');
+    }
+
+    const finalScore = Math.min(100, Math.max(0, Math.round(score)));
+    const statusLabel =
+      finalScore < 40 || (p.marginPercent < 20 && p.weeklyUnitsBaseline < 30)
+        ? 'Deletion Candidate'
+        : finalScore < 55
+        ? 'Renegotiate Terms'
+        : finalScore < 75
+        ? 'Optimize Margin'
+        : 'Protect Hero';
+
+    return { finalScore, statusLabel, riskFactors, opportunityFactors };
+  };
+
   return (
-    <div className="space-y-6 animate-fadeIn">
+    <div className="space-y-3 sm:space-y-5 animate-fadeIn">
       
       {/* Toast Notification */}
       {toast && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-3 px-4 py-3 rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700 text-xs font-semibold animate-in fade-in slide-in-from-bottom-2">
+        <div className="fixed bottom-20 md:bottom-6 inset-x-3 md:inset-x-auto md:right-6 z-50 flex items-center justify-between md:justify-start gap-3 px-4 py-3 rounded-2xl bg-slate-900 text-white shadow-2xl border border-slate-700 text-xs font-semibold">
           <span>{toast.message}</span>
           {toast.onUndo && (
             <button
               onClick={toast.onUndo}
-              className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center gap-1 cursor-pointer transition-colors"
+              className="min-h-[36px] px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold flex items-center gap-1 cursor-pointer transition-colors shrink-0"
             >
               <Undo2 className="w-3 h-3" />
               <span>Undo</span>
@@ -869,867 +1047,1628 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       )}
 
       {/* ========================================================================= */}
-      {/* 1. RANGE CATALOGUE SWITCHER & MULTI-RANGE MANAGEMENT BAR                 */}
+      {/* 1. CENTERED RANGE HERO + CATALOG BAR + SEGMENTED SUB-TABS                 */}
       {/* ========================================================================= */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          
-          {/* Left: Active Catalogue Selector */}
-          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-            <div className="flex items-center gap-2">
-              <div className="p-2.5 rounded-xl bg-blue-50 text-blue-600">
-                <Boxes className="w-5 h-5" />
-              </div>
-              <div>
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
-                  Active SKU Range / Catalogue
-                </span>
-                <div className="flex items-center gap-2">
-                  <select
-                    id="select-sku-catalog"
-                    value={activeCatalogId || (currentCatalog?.id)}
-                    onChange={(e) => onSelectCatalog && onSelectCatalog(e.target.value)}
-                    className="font-bold text-sm text-slate-900 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 focus:outline-none focus:border-blue-500 cursor-pointer max-w-xs truncate"
-                  >
-                    {catalogs.map(cat => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name} ({cat.products ? cat.products.length : products.length} SKUs)
-                      </option>
-                    ))}
-                  </select>
-                  {currentCatalog?.retailerBanner && (
-                    <span className="hidden md:inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                      <Store className="w-3 h-3 text-slate-500" />
-                      <span>{currentCatalog.retailerBanner}</span>
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Catalogue Actions (New Range, Edit, Duplicate, Delete) */}
-          <div className="flex items-center flex-wrap gap-2">
+      <WorkspacePageHero
+        stepLabel="Step 1 of 5 · Range Setup"
+        title="Product Range & SKUs"
+        subtitle="Manage unit costs, retail RRPs, baseline demand velocity, and range health before slotting your 52-week calendar."
+        accent="blue"
+        currentTheme={currentTheme}
+        activeStep={1}
+        onSelectTab={onSelectTab}
+        heroImageSrc={rangeInventoryHeroImg}
+        heroImageAlt="Product Range and Inventory Shelves Illustration"
+        FallbackIcon={Boxes}
+        actions={
+          <>
             <button
-              id="btn-create-new-range"
-              onClick={handleOpenCreateCatalog}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
-              title="Create a new separate SKU range"
+              id="btn-add-single-sku"
+              type="button"
+              onClick={() => setIsAddModalOpen(true)}
+              className="min-h-[44px] flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <FolderPlus className="w-3.5 h-3.5" />
-              <span>+ New Range</span>
-            </button>
-
-            <button
-              id="btn-edit-active-range"
-              onClick={handleOpenEditCatalog}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 cursor-pointer transition-colors"
-              title="Edit name, retailer banner, and description"
-            >
-              <Edit3 className="w-3.5 h-3.5 text-slate-500" />
-              <span>Edit Details</span>
-            </button>
-
-            <button
-              id="btn-duplicate-range"
-              onClick={handleDuplicateCatalog}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 text-xs font-semibold border border-slate-200 cursor-pointer transition-colors"
-              title="Duplicate this range into a new separate catalogue"
-            >
-              <Copy className="w-3.5 h-3.5 text-slate-500" />
-              <span className="hidden sm:inline">Duplicate</span>
-            </button>
-
-            {catalogs.length > 1 && currentCatalog && (
-              <button
-                id="btn-delete-range"
-                onClick={() => setCatalogToDelete(currentCatalog)}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-semibold border border-rose-200 cursor-pointer transition-colors"
-                title="Delete this range"
-              >
-                <Trash2 className="w-3.5 h-3.5 text-rose-500" />
-                <span className="hidden sm:inline">Delete Range</span>
-              </button>
-            )}
-
-            {/* Clear All SKUs in Range */}
-            {products.length > 0 && (
-              <button
-                id="btn-clear-all-skus"
-                onClick={() => setIsClearAllModalOpen(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-rose-600 hover:bg-rose-50 text-xs font-semibold cursor-pointer transition-colors ml-auto sm:ml-0"
-                title="Remove all SKUs in this catalog"
-              >
-                <Trash2 className="w-3.5 h-3.5" />
-                <span>Clear All ({products.length})</span>
-              </button>
-            )}
-          </div>
-        </div>
-
-        {currentCatalog?.description && (
-          <p className="text-xs text-slate-500 border-t border-slate-100 pt-2.5">
-            {currentCatalog.description}
-          </p>
-        )}
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 2. TOP ACTION BUTTON STRIP (CSV, TEMPLATE, AUTO PLAN, ADD SKU)           */}
-      {/* ========================================================================= */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <Package className="w-5 h-5 text-blue-400" />
-                <span>Range Inventory ({products.length} SKUs in "{currentCatalog?.name || 'Active Range'}")</span>
-              </h2>
-              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Live Data Matrix
-              </span>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Simulate trade margins, co-op scan funding, discount depth, and 52-week promotional performance across Australian retail channels.
-            </p>
-          </div>
-
-          {/* Action Button Strip */}
-          <div className="flex items-center flex-wrap gap-2">
-            <button
-              onClick={handleDownloadTemplate}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-emerald-200 text-xs font-semibold border border-emerald-500/40 shadow-sm cursor-pointer transition-all"
-              title="Download clean CSV template with instructions"
-            >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <span>CSV Template</span>
+              <Plus className="w-4 h-4 shrink-0" />
+              <span>Add SKU</span>
             </button>
 
             <button
               id="btn-upload-csv-focal"
+              type="button"
               onClick={onOpenUploadModal}
-              className="flex items-center gap-3 px-7 py-4 rounded-2xl bg-gradient-to-r from-emerald-600 via-teal-600 to-blue-600 hover:from-emerald-500 hover:to-blue-500 text-white text-sm sm:text-base font-black shadow-xl shadow-emerald-600/40 ring-4 ring-emerald-400/80 hover:scale-[1.03] active:scale-100 transition-all cursor-pointer group animate-pulse"
-              title="Import CSV range and run portfolio diagnostics"
+              className="hidden sm:flex min-h-[44px] items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Upload className="w-5 h-5 text-emerald-200 group-hover:rotate-12 transition-transform" />
-              <span>Import Range CSV</span>
+              <Upload className="w-4 h-4 shrink-0" />
+              <span>Import CSV</span>
             </button>
 
             <button
-              onClick={onAutoGeneratePlanFromRange}
-              className="flex items-center gap-2 px-5 py-3 rounded-xl bg-blue-900/30 hover:bg-blue-900/50 text-blue-200 border border-blue-700 hover:border-blue-500 text-sm font-bold cursor-pointer transition-all shadow-sm"
-              title="Slot this SKU range into the 52-week promotional calendar"
+              type="button"
+              onClick={() => setIsToolsDrawerOpen(true)}
+              className="min-h-[44px] flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-200 dark:border-slate-700 text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0"
             >
-              <Sparkles className="w-5 h-5 text-blue-400" />
-              <span>Auto-Build Promo Plan</span>
+              <Wrench className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400 shrink-0" />
+              <span>Range &amp; Tools</span>
             </button>
-
-            <button
-              onClick={handleExportCsv}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 cursor-pointer transition-colors shadow-sm"
-              title="Download your current SKU catalog as a CSV"
-            >
-              <Download className="w-4 h-4 text-slate-400" />
-              <span>Export CSV</span>
-            </button>
-
-            <button
-              id="btn-add-single-sku"
-              onClick={() => setIsAddModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold shadow-sm transition-all cursor-pointer"
-            >
-              <Plus className="w-4 h-4" />
-              <span>Add SKU</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Portfolio Summary Diagnostics */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-6 gap-3 pt-2 border-t border-slate-800 text-xs">
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Total Active SKUs</span>
-            <span className="text-base font-black text-white font-mono">{products.length}</span>
-          </div>
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Avg Range RRP</span>
-            <span className="text-base font-black text-white font-mono">${(portfolioAnalysis?.overallAvgRrp || 0).toFixed(2)}</span>
-          </div>
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Avg Base Margin</span>
-            <span className="text-base font-black text-emerald-400 font-mono">{(portfolioAnalysis?.overallAvgMargin || 0).toFixed(1)}%</span>
-          </div>
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Weekly Baseline Volume</span>
-            <span className="text-base font-black text-blue-400 font-mono">{formatNumber(Math.round((portfolioAnalysis?.totalAnnualBaselineUnits || 0) / 52))} u</span>
-          </div>
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Annual Baseline Val</span>
-            <span className="text-base font-black text-white font-mono">{formatAud(portfolioAnalysis?.totalAnnualBaselineRevenueAud || 0)}</span>
-          </div>
-          <div className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80">
-            <span className="text-[10px] text-slate-400 uppercase font-semibold block">Scan Rebate Eligible</span>
-            <span className="text-base font-black text-emerald-400 font-mono">
-              {products.filter(p => p.supplierCoOpEligible).length} / {products.length}
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* ========================================================================= */}
-      {/* 3. LIVE SCAN REBATE MARGIN SIMULATOR WIDGET                              */}
-      {/* ========================================================================= */}
-      <ScanRebateMarginSimulator />
-
-      {/* ========================================================================= */}
-      {/* 4. SEARCH, FILTERS & PRESET WORKSPACE                                    */}
-      {/* ========================================================================= */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
-        
-        {/* Search & Action Bar */}
-        <div className="flex flex-col sm:flex-row items-center gap-3">
-          <div className="relative flex-1 w-full">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search by SKU Code, Brand Name, Subcategory, or Tags..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-10 pr-10 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
-            )}
-          </div>
-
-          <button
-            onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
-            className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
-              isAdvancedFiltersOpen || activeFiltersCount > 0
-                ? 'bg-blue-600/20 text-blue-300 border-blue-500/40'
-                : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-            }`}
-          >
-            <SlidersHorizontal className="w-3.5 h-3.5" />
-            <span>Filters</span>
-            {activeFiltersCount > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full text-[10px] font-bold bg-blue-500 text-white">
-                {activeFiltersCount}
-              </span>
-            )}
-          </button>
-        </div>
-
-        {/* Quick Filter Presets */}
-        <div className="flex items-center gap-2 overflow-x-auto scrollbar-none pb-1 text-xs">
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">
-            Quick Views:
-          </span>
-          <button
-            onClick={() => handleApplyPreset('all')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-              activeFiltersCount === 0 
-                ? 'bg-blue-600 text-white font-bold' 
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            All SKUs ({products.length})
-          </button>
-          <button
-            onClick={() => handleApplyPreset('high_margin')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-              marginBracket === 'high_50' 
-                ? 'bg-emerald-600 text-white font-bold' 
-                : 'bg-slate-950 text-emerald-400 hover:text-emerald-300 border border-slate-800'
-            }`}
-          >
-            High Margin (50%+)
-          </button>
-          <button
-            onClick={() => handleApplyPreset('volume_heroes')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-              selectedTier === 'tier1_hero' 
-                ? 'bg-amber-600 text-white font-bold' 
-                : 'bg-slate-950 text-amber-400 hover:text-amber-300 border border-slate-800'
-            }`}
-          >
-            Tier 1 Volume Heroes
-          </button>
-          <button
-            onClick={() => handleApplyPreset('coop_funded')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-              fundingStatus === 'coop' 
-                ? 'bg-blue-600 text-white font-bold' 
-                : 'bg-slate-950 text-blue-400 hover:text-blue-300 border border-slate-800'
-            }`}
-          >
-            Vendor Scan Funded
-          </button>
-          <button
-            onClick={() => handleApplyPreset('gap_skus')}
-            className={`px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
-              promoActivityFilter === 'unpromoted_gap' 
-                ? 'bg-purple-600 text-white font-bold' 
-                : 'bg-slate-950 text-purple-400 hover:text-purple-300 border border-slate-800'
-            }`}
-          >
-            Unscheduled Gap SKUs
-          </button>
-          {activeFiltersCount > 0 && (
-            <button
-              onClick={handleResetFilters}
-              className="px-2.5 py-1 rounded-lg text-xs font-bold text-rose-400 hover:text-rose-300 hover:underline cursor-pointer ml-auto flex items-center gap-1"
-            >
-              <RotateCcw className="w-3 h-3" />
-              <span>Reset Filters</span>
-            </button>
-          )}
-        </div>
-
-        {/* Category Pills Bar */}
-        <div className="space-y-1.5 pt-2 border-t border-slate-800">
-          <div className="flex flex-wrap gap-1.5">
-            <button
-              onClick={() => {
-                setSelectedCategory('ALL');
-                setSelectedSubcategory('ALL');
-              }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${
-                selectedCategory === 'ALL'
-                  ? 'bg-blue-600 text-white border-blue-500 font-bold'
-                  : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-              }`}
-            >
-              All Categories ({products.length})
-            </button>
-            {categories.map((cat, idx) => {
-              const count = products.filter(p => p.category === cat).length;
-              const isSelected = selectedCategory === cat;
-              return (
-                <button
-                  key={`cat-tab-${cat}-${idx}`}
-                  onClick={() => {
-                    setSelectedCategory(isSelected ? 'ALL' : cat);
-                    setSelectedSubcategory('ALL');
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer transition-all flex items-center gap-1.5 ${
-                    isSelected
-                      ? 'bg-blue-600 text-white border-blue-500 font-bold'
-                      : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                  }`}
+          </>
+        }
+      >
+        <div className="space-y-3">
+          {/* Active Range Selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0 flex-1">
+              <div className="hidden sm:flex p-2 rounded-xl bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20 shrink-0">
+                <Boxes className="w-4 h-4" />
+              </div>
+              <div className="min-w-0 flex-1 flex items-center gap-2">
+                <select
+                  id="select-sku-catalog"
+                  aria-label="Active SKU range catalog"
+                  value={activeCatalogId || (currentCatalog?.id)}
+                  onChange={(e) => onSelectCatalog && onSelectCatalog(e.target.value)}
+                  className="w-full sm:max-w-xs min-w-0 min-h-[42px] font-bold text-xs sm:text-sm text-slate-900 dark:text-white bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 focus:outline-none focus:border-blue-500 cursor-pointer truncate"
                 >
-                  <span>{cat}</span>
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                    isSelected ? 'bg-blue-800 text-white' : 'bg-slate-900 text-slate-400'
-                  }`}>
-                    {count}
+                  {catalogs.map(cat => (
+                    <option key={cat.id} value={cat.id}>
+                      {cat.name} ({cat.products ? cat.products.length : products.length} SKUs)
+                    </option>
+                  ))}
+                </select>
+                {currentCatalog?.retailerBanner && (
+                  <span className="hidden lg:inline-flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 truncate">
+                    <Store className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">{currentCatalog.retailerBanner}</span>
                   </span>
-                </button>
-              );
-            })}
+                )}
+              </div>
+            </div>
+
+            {/* 3-Way Segmented Sub-Tab Switcher */}
+            <div
+              role="tablist"
+              aria-label="Inventory and Range Review Sections"
+              className="grid grid-cols-3 gap-1 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 sm:min-w-[340px]"
+            >
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rangeSubTab === 'catalog'}
+                onClick={() => setRangeSubTab('catalog')}
+                className={`min-h-[38px] px-2 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  rangeSubTab === 'catalog'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Layers className="w-3.5 h-3.5 shrink-0" />
+                <span>Catalog</span>
+                <span className="font-mono text-[11px] opacity-75 tabular-nums">({products.length})</span>
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rangeSubTab === 'health'}
+                onClick={() => setRangeSubTab('health')}
+                className={`min-h-[38px] px-2 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  rangeSubTab === 'health'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <HeartPulse className="w-3.5 h-3.5 shrink-0" />
+                <span>Health Review</span>
+                {healthFlaggedCount > 0 && (
+                  <span className="font-mono text-[11px] font-black text-rose-600 dark:text-rose-400 tabular-nums">
+                    ({healthFlaggedCount})
+                  </span>
+                )}
+              </button>
+
+              <button
+                type="button"
+                role="tab"
+                aria-selected={rangeSubTab === 'simulator'}
+                onClick={() => setRangeSubTab('simulator')}
+                className={`min-h-[38px] px-2 sm:px-3 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
+                  rangeSubTab === 'simulator'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-xs'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Calculator className="w-3.5 h-3.5 shrink-0" />
+                <span>Simulator</span>
+              </button>
+            </div>
           </div>
         </div>
-
-        {/* Advanced Filters Expandable Grid */}
-        {isAdvancedFiltersOpen && (
-          <div className="pt-3 border-t border-slate-800 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs bg-slate-950/40 p-4 rounded-xl border border-slate-800">
-            {/* Subcategory */}
-            <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-300">Subcategory ({subcategories.length})</label>
-              <select
-                value={selectedSubcategory}
-                onChange={(e) => setSelectedSubcategory(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value="ALL">All Subcategories</option>
-                {subcategories.map((sub, idx) => (
-                  <option key={`sub-opt-${sub}-${idx}`} value={sub}>{sub}</option>
-                ))}
-              </select>
-            </div>
-
-            {/* Performance Tier */}
-            <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-300">Performance Tier</label>
-              <select
-                value={selectedTier}
-                onChange={(e) => setSelectedTier(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value="ALL">All Tiers</option>
-                <option value="tier1_hero">Tier 1: High Volume Hero</option>
-                <option value="tier2_margin">Tier 2: Margin Builder</option>
-                <option value="tier3_niche">Tier 3: Niche / Premium</option>
-                <option value="tier4_clearance">Tier 4: Clearance</option>
-              </select>
-            </div>
-
-            {/* RRP Bracket */}
-            <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-300">RRP Price Bracket</label>
-              <select
-                value={rrpBracket}
-                onChange={(e) => setRrpBracket(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value="ALL">All Price Points</option>
-                <option value="under_20">&lt; $20 AUD (Impulse)</option>
-                <option value="20_50">$20 - $50 AUD (Core Mass)</option>
-                <option value="50_150">$50 - $150 AUD (Mid-Tier)</option>
-                <option value="150_plus">$150+ AUD (High-Ticket)</option>
-              </select>
-            </div>
-
-            {/* Funding Status */}
-            <div className="space-y-1.5">
-              <label className="block font-semibold text-slate-300">Scan Funding Mode</label>
-              <select
-                value={fundingStatus}
-                onChange={(e) => setFundingStatus(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer"
-              >
-                <option value="ALL">All Funding Models</option>
-                <option value="coop">Vendor Scan Rebate Eligible</option>
-                <option value="retailer">Retailer Funded Only</option>
-              </select>
-            </div>
-          </div>
-        )}
-      </div>
+      </WorkspacePageHero>
 
       {/* ========================================================================= */}
-      {/* 5. FLOATING / STICKY BULK ACTION BAR (DELETE MULTI-SKU & EDITS)           */}
+      {/* SUB-TAB 2: RANGE HEALTH REVIEW (EMBEDDED RATIONALIZATION ENGINE)          */}
       {/* ========================================================================= */}
-      {selectedSkus.length > 0 && (
-        <div className="sticky top-16 z-30 bg-slate-900 border border-blue-500/50 rounded-2xl p-3.5 shadow-2xl flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
-          <div className="flex items-center gap-3">
-            <span className="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 text-xs font-bold border border-blue-500/30">
-              {selectedSkus.length} SKU{selectedSkus.length > 1 ? 's' : ''} Selected
-            </span>
-          </div>
-
-          <div className="flex items-center flex-wrap gap-2">
-            {/* Delete Selected Button */}
-            <button
-              id="btn-delete-selected-skus"
-              onClick={() => setIsBulkDeleteModalOpen(true)}
-              className="px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              <span>Delete Selected ({selectedSkus.length})</span>
-            </button>
-
-            {/* Reassign Category */}
-            <button
-              onClick={() => setBulkCategoryModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 flex items-center gap-1 cursor-pointer"
-            >
-              <FolderEdit className="w-3.5 h-3.5 text-blue-400" />
-              <span className="hidden sm:inline">Department</span>
-            </button>
-
-            {/* Add Tags */}
-            <button
-              onClick={() => setBulkTagsModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 flex items-center gap-1 cursor-pointer"
-            >
-              <Tag className="w-3.5 h-3.5 text-amber-400" />
-              <span className="hidden sm:inline">Tags</span>
-            </button>
-
-            {/* Adjust Price % */}
-            <button
-              onClick={() => setBulkDiscountModalOpen(true)}
-              className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-semibold text-xs border border-slate-700 flex items-center gap-1 cursor-pointer"
-            >
-              <Percent className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">% Price</span>
-            </button>
-
-            {/* Deselect All */}
-            <button
-              onClick={() => setSelectedSkus([])}
-              className="text-xs font-semibold text-slate-400 hover:text-white px-2 py-1 cursor-pointer"
-            >
-              Deselect All
-            </button>
-          </div>
-        </div>
+      {rangeSubTab === 'health' && (
+        <SkuDeletionEngineView
+          embedded
+          products={products}
+          promotions={promotions}
+          onDeleteProduct={onDeleteProduct}
+          onDeleteMultipleProducts={onDeleteMultipleProducts}
+          onImportProducts={onImportProducts}
+          onUnlockExport={onUnlockExport}
+          onOpenPricingModal={onOpenPricingModal}
+          userProfile={userProfile}
+          currentTheme={currentTheme}
+        />
       )}
 
       {/* ========================================================================= */}
-      {/* 6. PRODUCT RANGE DATA TABLE                                              */}
+      {/* SUB-TAB 3: SCAN REBATE MARGIN SIMULATOR                                   */}
       {/* ========================================================================= */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-300">
-            <thead className="bg-slate-950 text-slate-400 uppercase font-semibold text-[10px] border-b border-slate-800">
-              <tr>
-                <th className="py-3.5 px-4 w-10">
+      {rangeSubTab === 'simulator' && (
+        <ScanRebateMarginSimulator products={products} />
+      )}
+
+      {/* ========================================================================= */}
+      {/* SUB-TAB 1: CATALOG (SKU-FIRST MOBILE + DARK CONTRAST KPI BAND)            */}
+      {/* ========================================================================= */}
+      {rangeSubTab === 'catalog' && (
+        <>
+          {/* Dark Contrast Portfolio Telemetry Band (on mobile, lives in Range & Tools Drawer) */}
+          <div className="hidden md:grid grid-cols-3 lg:grid-cols-6 divide-x divide-slate-800 bg-[#0F172A] border border-slate-800 rounded-3xl text-xs text-white shadow-sm overflow-hidden">
+            <div className="p-4">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Active SKUs</span>
+              <span className="text-xl font-black text-white font-mono tabular-nums mt-1 block">{products.length}</span>
+            </div>
+            <div className="p-4">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Avg RRP</span>
+              <span className="text-xl font-black text-white font-mono tabular-nums mt-1 block">${(portfolioAnalysis?.overallAvgRrp || 0).toFixed(2)}</span>
+            </div>
+            <div className="p-4">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Avg Margin</span>
+              <span className="text-xl font-black text-emerald-400 font-mono tabular-nums mt-1 block">{(portfolioAnalysis?.overallAvgMargin || 0).toFixed(1)}%</span>
+            </div>
+            <div className="p-4">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Weekly Units</span>
+              <span className="text-xl font-black text-sky-400 font-mono tabular-nums mt-1 block">{formatNumber(Math.round((portfolioAnalysis?.totalAnnualBaselineUnits || 0) / 52))} u</span>
+            </div>
+            <div className="p-4">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Annual Base Val</span>
+              <span className="text-xl font-black text-white font-mono tabular-nums mt-1 block">{formatAud(portfolioAnalysis?.totalAnnualBaselineRevenueAud || 0)}</span>
+            </div>
+            <div className="p-4">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-bold block">Scan Eligible</span>
+              <span className="text-xl font-black text-emerald-400 font-mono tabular-nums mt-1 block">
+                {products.filter(p => p.supplierCoOpEligible).length} / {products.length}
+              </span>
+            </div>
+          </div>
+
+          {/* Compact Search + Sort & Filter Row */}
+          <div className="bg-white dark:bg-[#111726] border border-slate-200 dark:border-slate-800 rounded-2xl p-3 sm:p-4 shadow-sm space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search SKU code, name, category..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full min-h-[44px] pl-10 pr-9 py-2 rounded-xl bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs sm:text-sm text-slate-900 dark:text-white placeholder-slate-400 dark:placeholder-slate-500 focus:outline-none focus:border-blue-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery('')}
+                    aria-label="Clear search"
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 min-w-[32px] min-h-[32px] flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Mobile Sort & Filter Sheet Button */}
+              <button
+                type="button"
+                onClick={() => setIsFilterSortSheetOpen(true)}
+                className={`md:hidden min-h-[44px] flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
+                  activeFiltersCount > 0 || sortBy !== 'sku'
+                    ? 'bg-blue-50 dark:bg-blue-600/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/40'
+                    : 'bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                <span>Sort &amp; Filter</span>
+                {activeFiltersCount > 0 && (
+                  <span className="font-mono text-[11px] font-black text-blue-600 dark:text-blue-300 tabular-nums">
+                    ({activeFiltersCount})
+                  </span>
+                )}
+              </button>
+
+              {/* Desktop Filters Toggle */}
+              <button
+                type="button"
+                onClick={() => setIsAdvancedFiltersOpen(!isAdvancedFiltersOpen)}
+                className={`hidden md:flex min-h-[44px] items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold border transition-colors cursor-pointer shrink-0 whitespace-nowrap ${
+                  isAdvancedFiltersOpen || activeFiltersCount > 0
+                    ? 'bg-blue-50 dark:bg-blue-600/20 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-500/40'
+                    : 'bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>Filters</span>
+                {activeFiltersCount > 0 && (
+                  <span className="font-mono text-[11px] font-black text-blue-600 dark:text-blue-300 tabular-nums">
+                    ({activeFiltersCount})
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Desktop Quick Filter Presets & Category Strip */}
+            <div className="hidden md:flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('all')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                  activeFiltersCount === 0
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'bg-slate-100 dark:bg-slate-900 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                All SKUs ({products.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('high_margin')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                  marginBracket === 'high_50'
+                    ? 'bg-emerald-600 text-white font-bold'
+                    : 'bg-slate-100 dark:bg-slate-900 text-emerald-700 dark:text-emerald-400 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                High Margin (50%+)
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('volume_heroes')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                  selectedTier === 'tier1_hero'
+                    ? 'bg-amber-600 text-white font-bold'
+                    : 'bg-slate-100 dark:bg-slate-900 text-amber-700 dark:text-amber-400 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                Tier 1 Heroes
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('coop_funded')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                  fundingStatus === 'coop'
+                    ? 'bg-blue-600 text-white font-bold'
+                    : 'bg-slate-100 dark:bg-slate-900 text-blue-700 dark:text-blue-400 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                Scan Funded
+              </button>
+              <button
+                type="button"
+                onClick={() => handleApplyPreset('gap_skus')}
+                className={`px-2.5 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap cursor-pointer transition-colors ${
+                  promoActivityFilter === 'unpromoted_gap'
+                    ? 'bg-purple-600 text-white font-bold'
+                    : 'bg-slate-100 dark:bg-slate-900 text-purple-700 dark:text-purple-400 border border-slate-200 dark:border-slate-700'
+                }`}
+              >
+                Unscheduled Gaps
+              </button>
+              {activeFiltersCount > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-600 dark:text-rose-400 hover:underline cursor-pointer ml-auto flex items-center gap-1 whitespace-nowrap"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset</span>
+                </button>
+              )}
+            </div>
+
+            {isAdvancedFiltersOpen && (
+              <div className="hidden md:grid pt-3 border-t border-slate-100 dark:border-slate-800 grid-cols-2 lg:grid-cols-4 gap-3 text-xs bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200/80 dark:border-slate-800">
+                <div className="space-y-1.5">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">Department Category</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      setSelectedSubcategory('ALL');
+                    }}
+                    className="w-full min-h-[40px] bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="ALL">All Categories ({products.length})</option>
+                    {categories.map((cat, idx) => (
+                      <option key={`dcat-${cat}-${idx}`} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">Subcategory ({subcategories.length})</label>
+                  <select
+                    value={selectedSubcategory}
+                    onChange={(e) => setSelectedSubcategory(e.target.value)}
+                    className="w-full min-h-[40px] bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="ALL">All Subcategories</option>
+                    {subcategories.map((sub, idx) => (
+                      <option key={`sub-opt-${sub}-${idx}`} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">RRP Price Bracket</label>
+                  <select
+                    value={rrpBracket}
+                    onChange={(e) => setRrpBracket(e.target.value as any)}
+                    className="w-full min-h-[40px] bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="ALL">All Price Points</option>
+                    <option value="under_20">&lt; $20 AUD (Impulse)</option>
+                    <option value="20_50">$20 - $50 AUD (Core Mass)</option>
+                    <option value="50_150">$50 - $150 AUD (Mid-Tier)</option>
+                    <option value="150_plus">$150+ AUD (High-Ticket)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300">Scan Funding Mode</label>
+                  <select
+                    value={fundingStatus}
+                    onChange={(e) => setFundingStatus(e.target.value as any)}
+                    className="w-full min-h-[40px] bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="ALL">All Funding Models</option>
+                    <option value="coop">Vendor Scan Rebate Eligible</option>
+                    <option value="retailer">Retailer Funded Only</option>
+                  </select>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* ===================================================================== */}
+          {/* FLOATING / STICKY BULK ACTION BAR (DELETE MULTI-SKU & EDITS)         */}
+          {/* ===================================================================== */}
+          {selectedSkus.length > 0 && (
+            <div className="fixed bottom-[68px] inset-x-3 md:static z-30 bg-white dark:bg-slate-900 border border-blue-500/60 rounded-2xl px-3 py-2.5 shadow-xl md:shadow-sm flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 shrink-0">
+                <span className="text-xs font-black text-blue-700 dark:text-blue-300 tabular-nums whitespace-nowrap">
+                  {selectedSkus.length} selected
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                <button
+                  id="btn-delete-selected-skus"
+                  type="button"
+                  onClick={() => setIsBulkDeleteModalOpen(true)}
+                  className="min-h-[38px] px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>Delete</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBulkCategoryModalOpen(true)}
+                  className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Assign category"
+                >
+                  <FolderEdit className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                  <span className="hidden sm:inline">Category</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBulkTagsModalOpen(true)}
+                  className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Add tags"
+                >
+                  <Tag className="w-3.5 h-3.5 text-amber-600 dark:text-amber-400" />
+                  <span className="hidden sm:inline">Tags</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBulkDiscountModalOpen(true)}
+                  className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Bulk % price adjustment"
+                >
+                  <Percent className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                  <span className="hidden sm:inline">% Price</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setBulkTierModalOpen(true)}
+                  className="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 font-semibold text-xs border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer whitespace-nowrap shrink-0"
+                  title="Assign performance tier"
+                >
+                  <Layers className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
+                  <span className="hidden sm:inline">Tier</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSkus([])}
+                  aria-label="Clear selection"
+                  className="min-h-[38px] min-w-[38px] flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 dark:hover:text-white cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ===================================================================== */}
+          {/* PRODUCT RANGE LIST (COMPACT MOBILE ROWS + DESKTOP TABLE)             */}
+          {/* ===================================================================== */}
+          <div className="bg-white dark:bg-[#111726] border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden">
+            {/* Compact Mobile List View (< md) */}
+            <div className="md:hidden">
+              <div className="px-4 py-2.5 bg-slate-50 dark:bg-slate-900/80 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-2 text-xs">
+                <label className="min-h-[36px] flex items-center gap-2.5 cursor-pointer font-semibold text-slate-700 dark:text-slate-200">
                   <input
                     type="checkbox"
                     checked={isAllSelected}
                     onChange={handleToggleSelectAll}
                     aria-label="Select all products"
-                    className="rounded text-blue-500 focus:ring-blue-400 bg-slate-950 border-slate-800 cursor-pointer"
+                    className="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 w-4 h-4 cursor-pointer"
                   />
-                </th>
-                
-                {/* SKU Code & Name */}
-                <th 
-                  onClick={() => handleHeaderSort('name')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
+                  <span>Select All ({filteredProducts.length})</span>
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="min-h-[36px] flex items-center gap-1 text-[11px] font-semibold text-slate-500 dark:text-slate-400 hover:text-blue-600 cursor-pointer whitespace-nowrap"
                 >
-                  <div className="flex items-center">
-                    <span>SKU & Product Name</span>
-                    {renderSortIndicator('name')}
-                  </div>
-                </th>
+                  <span>{sortLabelMap[sortBy]}</span>
+                  {sortOrder === 'asc' ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+                </button>
+              </div>
 
-                {/* Category */}
-                <th 
-                  onClick={() => handleHeaderSort('category')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
-                >
-                  <div className="flex items-center">
-                    <span>Category & Subcategory</span>
-                    {renderSortIndicator('category')}
-                  </div>
-                </th>
-
-                {/* Performance Tier */}
-                <th className="py-3.5 px-4 select-none">
-                  <span>Tier</span>
-                </th>
-
-                {/* RRP */}
-                <th 
-                  onClick={() => handleHeaderSort('rrp')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
-                >
-                  <div className="flex items-center">
-                    <span>RRP (AUD)</span>
-                    {renderSortIndicator('rrp')}
-                  </div>
-                </th>
-
-                {/* Cost */}
-                <th 
-                  onClick={() => handleHeaderSort('cost')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
-                >
-                  <div className="flex items-center">
-                    <span>Unit Cost</span>
-                    {renderSortIndicator('cost')}
-                  </div>
-                </th>
-
-                {/* Base Margin % */}
-                <th 
-                  onClick={() => handleHeaderSort('margin')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
-                >
-                  <div className="flex items-center">
-                    <span>Base Margin</span>
-                    {renderSortIndicator('margin')}
-                  </div>
-                </th>
-
-                {/* Baseline Units */}
-                <th 
-                  onClick={() => handleHeaderSort('units')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
-                >
-                  <div className="flex items-center">
-                    <span>Baseline Volume</span>
-                    {renderSortIndicator('units')}
-                  </div>
-                </th>
-
-                {/* 52-Wk Promo Performance */}
-                <th 
-                  onClick={() => handleHeaderSort('projectedPromoRevenue')}
-                  className="py-3.5 px-4 cursor-pointer hover:text-blue-400 transition-colors select-none group"
-                >
-                  <div className="flex items-center">
-                    <span>52-Wk Performance</span>
-                    {renderSortIndicator('projectedPromoRevenue')}
-                  </div>
-                </th>
-
-                {/* Vendor Co-Op */}
-                <th className="py-3.5 px-4 select-none">
-                  <span>Trade Funding</span>
-                </th>
-
-                {/* Action Buttons (Details + Single Delete) */}
-                <th className="py-3.5 px-4 text-right select-none">
-                  <span>Actions</span>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
               {filteredProducts.length === 0 ? (
-                <tr>
-                  <td colSpan={11} className="py-12 text-center text-slate-500 font-sans">
-                    <Package className="w-8 h-8 mx-auto text-slate-600 mb-2 opacity-60" />
-                    <p className="font-semibold text-slate-400">No SKUs match the current range and filter criteria.</p>
-                    <p className="text-xs text-slate-500 mt-1">Try resetting your filters or adding a new SKU to this range.</p>
-                  </td>
-                </tr>
+                <div className="py-12 px-4 text-center text-slate-500 dark:text-slate-400">
+                  <Package className="w-8 h-8 mx-auto text-slate-400 dark:text-slate-600 mb-2 opacity-70" />
+                  <p className="font-semibold text-slate-700 dark:text-slate-300 text-sm">No SKUs match your filters.</p>
+                  <button
+                    type="button"
+                    onClick={handleResetFilters}
+                    className="mt-3 min-h-[40px] px-4 py-2 rounded-xl bg-blue-600 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Reset Filters
+                  </button>
+                </div>
               ) : (
-                filteredProducts.map((p, idx) => {
-                  const isExpanded = expandedSkus.includes(p.sku);
-                  const promoStats = skuPromoStatsMap[p.sku];
-                  const isSelected = selectedSkus.includes(p.sku);
+                <div className="divide-y divide-slate-100 dark:divide-slate-800">
+                  {filteredProducts.map((p, idx) => {
+                    const promoStats = skuPromoStatsMap[p.sku];
+                    const invForecast = computeSkuInventoryForecast(p, skuPromoDemandMap.get(p.sku));
+                    const isSelected = selectedSkus.includes(p.sku);
 
-                  return (
-                    <React.Fragment key={`prod-row-${p.sku}-${idx}`}>
-                      <tr className={`hover:bg-slate-800/40 transition-colors ${isSelected ? 'bg-blue-500/10' : ''}`}>
-                        
-                        {/* Checkbox */}
-                        <td className="py-3.5 px-4 w-10 font-sans">
+                    return (
+                      <div
+                        key={`mob-sku-${p.sku}-${idx}`}
+                        className={`px-4 py-3 flex items-center gap-2 transition-colors ${isSelected ? 'bg-blue-50/60 dark:bg-blue-500/10' : ''}`}
+                      >
+                        <label className="min-w-[44px] min-h-[44px] -ml-2 flex items-center justify-center shrink-0 cursor-pointer">
                           <input
                             type="checkbox"
                             checked={isSelected}
                             onChange={() => handleToggleSelectSku(p.sku)}
                             aria-label={`Select product ${p.name}`}
-                            className="rounded text-blue-500 focus:ring-blue-400 bg-slate-950 border-slate-800 cursor-pointer"
+                            className="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 w-4 h-4 cursor-pointer"
                           />
-                        </td>
+                        </label>
 
-                        {/* SKU & Name */}
-                        <td className="py-3.5 px-4 font-sans max-w-[240px]">
-                          <div className="font-mono text-[11px] text-blue-400 font-bold">{p.sku}</div>
-                          <div className="font-semibold text-white mt-0.5 truncate" title={p.name}>{p.name}</div>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {p.tags.slice(0, 3).map((t, tIdx) => (
-                              <span key={`tag-${p.sku}-${t}-${tIdx}`} className="text-[9px] px-1.5 py-0.2 rounded bg-slate-950 text-slate-400 border border-slate-800">
-                                {t}
-                              </span>
-                            ))}
-                            {p.tags.length > 3 && (
-                              <span className="text-[9px] text-slate-500">+{p.tags.length - 3}</span>
-                            )}
+                        <button
+                          type="button"
+                          onClick={() => setInspectedSku(p)}
+                          className="flex-1 min-w-0 text-left flex items-center justify-between gap-3 py-0.5 cursor-pointer"
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5 text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{p.sku}</span>
+                              <span aria-hidden="true">·</span>
+                              <span className="truncate">{getTierShortLabel(p.performanceTier)}</span>
+                              <span aria-hidden="true">·</span>
+                              <span>{p.supplierCoOpEligible ? 'Scan' : 'Retailer'}</span>
+                            </div>
+                            <h4 className="font-bold text-sm text-slate-900 dark:text-white truncate mt-0.5">{p.name}</h4>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5 tabular-nums">
+                              {p.category} · {p.weeklyUnitsBaseline} u/wk ·{' '}
+                              {invForecast.hasInventory ? (
+                                <span
+                                  className={
+                                    invForecast.stockStatus === 'CRITICAL'
+                                      ? 'font-bold text-rose-600 dark:text-rose-400'
+                                      : invForecast.stockStatus === 'LOW'
+                                      ? 'font-bold text-amber-600 dark:text-amber-400'
+                                      : 'font-semibold text-emerald-600 dark:text-emerald-400'
+                                  }
+                                >
+                                  {formatNumber(invForecast.currentStock || 0)} u ({invForecast.weeksOfCover}w)
+                                </span>
+                              ) : (
+                                <span>Unconstrained</span>
+                              )}
+                            </p>
                           </div>
-                        </td>
 
-                        {/* Category & Subcategory */}
-                        <td className="py-3.5 px-4 font-sans">
-                          <div className="text-white font-medium">{p.category}</div>
-                          <div className="text-slate-400 text-[11px]">{p.subcategory}</div>
-                        </td>
-
-                        {/* Tier Status */}
-                        <td className="py-3.5 px-4 font-sans">
-                          {p.performanceTier === 'tier1_hero' && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                              Tier 1 Hero
-                            </span>
-                          )}
-                          {p.performanceTier === 'tier2_margin' && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-500/20 text-blue-300 border border-blue-500/30">
-                              Tier 2 Margin
-                            </span>
-                          )}
-                          {p.performanceTier === 'tier3_niche' && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                              Tier 3 Niche
-                            </span>
-                          )}
-                          {p.performanceTier === 'tier4_clearance' && (
-                            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-                              Tier 4 Clearance
-                            </span>
-                          )}
-                        </td>
-
-                        {/* RRP */}
-                        <td className="py-3.5 px-4 font-bold text-white">
-                          ${p.rrp.toFixed(2)}
-                        </td>
-
-                        {/* Cost */}
-                        <td className="py-3.5 px-4 text-slate-400">
-                          ${p.cost.toFixed(2)}
-                        </td>
-
-                        {/* Base Margin */}
-                        <td className="py-3.5 px-4 font-semibold text-emerald-400">
-                          {p.marginPercent.toFixed(1)}%
-                        </td>
-
-                        {/* Baseline Volume */}
-                        <td className="py-3.5 px-4 font-medium text-slate-300">
-                          {p.weeklyUnitsBaseline} u/wk
-                        </td>
-
-                        {/* 52-Wk Promo Performance */}
-                        <td className="py-3.5 px-4 font-sans">
-                          {promoStats && promoStats.plannedWeeksCount > 0 ? (
-                            <div className="space-y-0.5">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-white text-[11px]">
-                                  {formatAud(promoStats.totalProjectedRevenueAud)}
-                                </span>
-                                <span className="text-[10px] px-1.5 py-0.2 rounded bg-blue-500/20 text-blue-300 border border-blue-500/30 font-mono font-bold">
-                                  {promoStats.plannedWeeksCount} wks
-                                </span>
+                          <div className="flex items-center gap-2 shrink-0">
+                            <div className="text-right tabular-nums">
+                              <div className="font-mono text-sm font-black text-slate-900 dark:text-white">
+                                ${p.rrp.toFixed(2)}
                               </div>
-                              <div className="text-[10px] text-emerald-400 font-medium">
-                                +{((promoStats.avgLiftMultiplier - 1) * 100).toFixed(0)}% Lift ({formatNumber(promoStats.totalProjectedUnits)} u)
+                              <div className="text-[11px] font-mono font-bold text-emerald-600 dark:text-emerald-400">
+                                {p.marginPercent.toFixed(1)}% · {promoStats && promoStats.plannedWeeksCount > 0 ? `${promoStats.plannedWeeksCount}w` : 'Gap'}
                               </div>
                             </div>
-                          ) : (
-                            <span className="text-[11px] text-slate-500 italic">
-                              Unscheduled Gap
-                            </span>
-                          )}
-                        </td>
-
-                        {/* Vendor Co-Op */}
-                        <td className="py-3.5 px-4 font-sans">
-                          {p.supplierCoOpEligible ? (
-                            <span className="text-emerald-400 font-bold text-[11px] flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3" /> Scan Rebate
-                            </span>
-                          ) : (
-                            <span className="text-slate-500 text-[11px]">Retailer Funded</span>
-                          )}
-                        </td>
-
-                        {/* Action Buttons: Single SKU Delete & Expand */}
-                        <td className="py-3.5 px-4 text-right font-sans">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {/* Single SKU Delete Button */}
-                            <button
-                              onClick={() => setSkuToDelete(p)}
-                              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/30 transition-colors cursor-pointer"
-                              title={`Delete ${p.sku}`}
-                              aria-label={`Delete SKU ${p.sku}`}
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-
-                            {/* Details Toggle */}
-                            <button
-                              onClick={() => toggleExpandSku(p.sku)}
-                              className="px-2.5 py-1 rounded-lg bg-slate-950 hover:bg-slate-800 text-blue-400 font-bold text-[11px] border border-slate-800 flex items-center gap-1 cursor-pointer transition-all"
-                            >
-                              <span>{isExpanded ? 'Hide' : 'Details'}</span>
-                              {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                            </button>
+                            <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
                           </div>
-                        </td>
-                      </tr>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
-                      {/* Expanded SKU Details Drawer */}
-                      {isExpanded && (
-                        <tr className="bg-slate-950/95 border-b border-slate-800">
-                          <td colSpan={11} className="p-5 font-sans">
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-xl">
-                              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                                <div className="flex items-center gap-2">
-                                  <span className="font-mono text-xs font-bold text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-lg border border-blue-500/30">
-                                    {p.sku}
+            {/* Desktop Table View (md+) */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+                <thead className="bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 uppercase font-semibold text-[10px] border-b border-slate-200 dark:border-slate-800">
+                  <tr>
+                    <th className="py-3.5 px-4 w-10">
+                      <input
+                        type="checkbox"
+                        checked={isAllSelected}
+                        onChange={handleToggleSelectAll}
+                        aria-label="Select all products"
+                        className="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 cursor-pointer"
+                      />
+                    </th>
+                    
+                    <th 
+                      onClick={() => handleHeaderSort('name')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>SKU &amp; Product Name</span>
+                        {renderSortIndicator('name')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleHeaderSort('category')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>Category &amp; Subcategory</span>
+                        {renderSortIndicator('category')}
+                      </div>
+                    </th>
+
+                    <th className="py-3.5 px-4 select-none">
+                      <span>Tier</span>
+                    </th>
+
+                    <th 
+                      onClick={() => handleHeaderSort('rrp')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>RRP (AUD)</span>
+                        {renderSortIndicator('rrp')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleHeaderSort('cost')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>Unit Cost</span>
+                        {renderSortIndicator('cost')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleHeaderSort('margin')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>Base Margin</span>
+                        {renderSortIndicator('margin')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleHeaderSort('units')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>Baseline Volume</span>
+                        {renderSortIndicator('units')}
+                      </div>
+                    </th>
+
+                    <th
+                      onClick={() => handleHeaderSort('stockLevel')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>Inventory &amp; Cover</span>
+                        {renderSortIndicator('stockLevel')}
+                      </div>
+                    </th>
+
+                    <th 
+                      onClick={() => handleHeaderSort('projectedPromoRevenue')}
+                      className="py-3.5 px-4 cursor-pointer hover:text-blue-600 dark:hover:text-blue-400 transition-colors select-none group"
+                    >
+                      <div className="flex items-center">
+                        <span>52-Wk Performance</span>
+                        {renderSortIndicator('projectedPromoRevenue')}
+                      </div>
+                    </th>
+
+                    <th className="py-3.5 px-4 select-none">
+                      <span>Trade Funding</span>
+                    </th>
+
+                    <th className="py-3.5 px-4 text-right select-none">
+                      <span>Actions</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/70 font-mono">
+                  {filteredProducts.length === 0 ? (
+                    <tr>
+                      <td colSpan={12} className="py-12 text-center text-slate-500 dark:text-slate-400 font-sans">
+                        <Package className="w-8 h-8 mx-auto text-slate-400 dark:text-slate-600 mb-2 opacity-60" />
+                        <p className="font-semibold text-slate-700 dark:text-slate-300">No SKUs match the current range and filter criteria.</p>
+                        <p className="text-xs text-slate-500 mt-1">Try resetting your filters or adding a new SKU to this range.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredProducts.map((p, idx) => {
+                      const promoStats = skuPromoStatsMap[p.sku];
+                      const invForecast = computeSkuInventoryForecast(p, skuPromoDemandMap.get(p.sku));
+                      const isSelected = selectedSkus.includes(p.sku);
+                      const isEditingStock = editingStockSku === p.sku;
+
+                      return (
+                        <tr
+                          key={`prod-row-${p.sku}-${idx}`}
+                          onClick={() => setInspectedSku(p)}
+                          className={`hover:bg-slate-50/80 dark:hover:bg-slate-800/40 transition-colors cursor-pointer ${isSelected ? 'bg-blue-50/70 dark:bg-blue-500/10' : ''}`}
+                        >
+                          <td className="py-3.5 px-4 w-10 font-sans" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => handleToggleSelectSku(p.sku)}
+                              aria-label={`Select product ${p.name}`}
+                              className="rounded text-blue-600 focus:ring-blue-500 bg-white dark:bg-slate-950 border-slate-300 dark:border-slate-700 cursor-pointer"
+                            />
+                          </td>
+
+                          <td className="py-3.5 px-4 font-sans max-w-[240px]">
+                            <div className="font-mono text-[11px] text-blue-600 dark:text-blue-400 font-bold">{p.sku}</div>
+                            <div className="font-semibold text-slate-900 dark:text-white mt-0.5 truncate" title={p.name}>{p.name}</div>
+                            {p.tags.length > 0 && (
+                              <div className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                                {p.tags.slice(0, 3).join(' · ')}
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-sans">
+                            <div className="text-slate-900 dark:text-white font-medium">{p.category}</div>
+                            <div className="text-slate-500 dark:text-slate-400 text-[11px]">{p.subcategory}</div>
+                          </td>
+
+                          <td className="py-3.5 px-4 font-sans whitespace-nowrap text-xs font-semibold text-slate-700 dark:text-slate-300">
+                            {getTierShortLabel(p.performanceTier)}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-bold text-slate-900 dark:text-white tabular-nums">
+                            ${p.rrp.toFixed(2)}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-slate-500 dark:text-slate-400 tabular-nums">
+                            ${p.cost.toFixed(2)}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-semibold text-emerald-600 dark:text-emerald-400 tabular-nums">
+                            {p.marginPercent.toFixed(1)}%
+                          </td>
+
+                          <td className="py-3.5 px-4 font-medium text-slate-700 dark:text-slate-300 tabular-nums">
+                            {p.weeklyUnitsBaseline} u/wk
+                          </td>
+
+                          <td
+                            className="py-3.5 px-4 font-sans whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {isEditingStock ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="1"
+                                  autoFocus
+                                  placeholder="Blank"
+                                  value={editingStockDraft}
+                                  onChange={(e) => setEditingStockDraft(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveInlineStock(p, editingStockDraft);
+                                    } else if (e.key === 'Escape') {
+                                      setEditingStockSku(null);
+                                    }
+                                  }}
+                                  className="w-24 px-2 py-1 rounded-lg bg-white dark:bg-slate-950 border border-blue-500 text-xs font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveInlineStock(p, editingStockDraft)}
+                                  title="Save inventory"
+                                  className="p-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer"
+                                >
+                                  <Check className="w-3 h-3" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleSaveInlineStock(p, '')}
+                                  title="Clear inventory (unconstrained)"
+                                  className="px-1.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-[10px] font-semibold text-slate-600 dark:text-slate-300 cursor-pointer"
+                                >
+                                  Clear
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingStockSku(null)}
+                                  title="Cancel edit"
+                                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            ) : invForecast.hasInventory ? (
+                              <div className="space-y-0.5 tabular-nums">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="font-mono font-bold text-slate-900 dark:text-white text-xs">
+                                    {formatNumber(invForecast.currentStock || 0)} u
                                   </span>
-                                  <h4 className="text-sm font-bold text-white">{p.name}</h4>
-                                </div>
-                                <div className="flex items-center gap-2">
                                   <button
-                                    onClick={() => setSkuToDelete(p)}
-                                    className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingStockSku(p.sku);
+                                      setEditingStockDraft(String(invForecast.currentStock ?? ''));
+                                    }}
+                                    title="Edit inventory on hand"
+                                    className="p-1 rounded text-slate-400 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer"
                                   >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                    <span>Delete this SKU</span>
+                                    <Edit3 className="w-3 h-3" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSaveInlineStock(p, '')}
+                                    title="Clear inventory (leave blank)"
+                                    className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 cursor-pointer"
+                                  >
+                                    <X className="w-3 h-3" />
                                   </button>
                                 </div>
-                              </div>
-
-                              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
-                                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                                  <span className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">Financial Structure</span>
-                                  <p className="text-slate-300">RRP: <span className="text-white font-bold">${p.rrp.toFixed(2)}</span></p>
-                                  <p className="text-slate-300">Cost: <span className="text-slate-400">${p.cost.toFixed(2)}</span></p>
-                                  <p className="text-slate-300">Base Margin: <span className="text-emerald-400 font-bold">${(p.rrp - p.cost).toFixed(2)} ({p.marginPercent.toFixed(1)}%)</span></p>
-                                  <p className="text-slate-300">Co-Op Rebate: <span className="text-blue-400">{p.supplierCoOpEligible ? 'Eligible' : 'Not Configured'}</span></p>
-                                </div>
-
-                                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                                  <span className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">Trade & Compliance</span>
-                                  <p className="text-slate-300">ACCC Hiatus Requirement: <span className="text-white font-bold">{p.minPromoGapWeeks || 4} Weeks</span></p>
-                                  <p className="text-slate-300">Seasonal Peak: <span className="text-amber-400 font-bold">{p.seasonalPeak || 'General'}</span></p>
-                                  <p className="text-slate-300">Weekly Baseline Volume: <span className="text-blue-400 font-bold">{p.weeklyUnitsBaseline} units</span></p>
-                                </div>
-
-                                <div className="p-3 bg-slate-950 rounded-xl border border-slate-800">
-                                  <span className="text-[10px] text-slate-400 uppercase font-semibold block mb-1">52-Week Promo Slots</span>
-                                  {promoStats && promoStats.plannedWeeks.length > 0 ? (
-                                    <div className="space-y-1">
-                                      <p className="text-slate-300">Planned Weeks: <span className="text-blue-400 font-bold">{promoStats.plannedWeeks.join(', ')}</span></p>
-                                      <p className="text-slate-300">Projected Revenue: <span className="text-emerald-400 font-bold">{formatAud(promoStats.totalProjectedRevenueAud)}</span></p>
-                                      <p className="text-slate-300">ACCC Hiatus Status: <span className={promoStats.isClashingHiatus ? 'text-rose-400 font-bold' : 'text-emerald-400 font-bold'}>{promoStats.isClashingHiatus ? 'Violation Detected' : '100% Compliant'}</span></p>
-                                    </div>
+                                <div
+                                  className={`text-[10px] font-semibold flex items-center gap-1 ${
+                                    invForecast.stockStatus === 'CRITICAL'
+                                      ? 'text-rose-600 dark:text-rose-400'
+                                      : invForecast.stockStatus === 'LOW'
+                                      ? 'text-amber-600 dark:text-amber-400'
+                                      : 'text-emerald-600 dark:text-emerald-400'
+                                  }`}
+                                >
+                                  {invForecast.hasStockoutWarning ? (
+                                    <AlertTriangle className="w-3 h-3 shrink-0" />
                                   ) : (
-                                    <p className="text-slate-500 italic">No promotional weeks assigned for this SKU yet.</p>
+                                    <CheckCircle2 className="w-3 h-3 shrink-0" />
                                   )}
+                                  <span>
+                                    {invForecast.stockStatus === 'CRITICAL'
+                                      ? `Stockout Risk (${invForecast.weeksOfCover}w)`
+                                      : invForecast.stockStatus === 'LOW'
+                                      ? `Low Cover (${invForecast.weeksOfCover}w)`
+                                      : `${invForecast.weeksOfCover}w cover`}
+                                  </span>
                                 </div>
                               </div>
+                            ) : (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                  — Unconstrained
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingStockSku(p.sku);
+                                    setEditingStockDraft('');
+                                  }}
+                                  className="px-2 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-blue-50 dark:hover:bg-blue-500/20 text-[10px] font-semibold text-blue-600 dark:text-blue-400 cursor-pointer"
+                                >
+                                  Set
+                                </button>
+                              </div>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-sans">
+                            {promoStats && promoStats.plannedWeeksCount > 0 ? (
+                              <div className="space-y-0.5 tabular-nums">
+                                <div className="font-bold text-slate-900 dark:text-white text-[11px]">
+                                  {formatAud(promoStats.totalProjectedRevenueAud)} · {promoStats.plannedWeeksCount} wks
+                                </div>
+                                <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-medium">
+                                  +{((promoStats.avgLiftMultiplier - 1) * 100).toFixed(0)}% Lift ({formatNumber(promoStats.totalProjectedUnits)} u)
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                                Unscheduled Gap
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 font-sans whitespace-nowrap">
+                            {p.supplierCoOpEligible ? (
+                              <span className="text-emerald-600 dark:text-emerald-400 font-bold text-[11px] flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3" /> Scan Rebate
+                              </span>
+                            ) : (
+                              <span className="text-slate-500 text-[11px]">Retailer Funded</span>
+                            )}
+                          </td>
+
+                          <td className="py-3.5 px-4 text-right font-sans" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setSkuToDelete(p)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 transition-colors cursor-pointer"
+                                title={`Delete ${p.sku}`}
+                                aria-label={`Delete SKU ${p.sku}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => setInspectedSku(p)}
+                                className="px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-900 hover:bg-slate-200 dark:hover:bg-slate-800 text-blue-600 dark:text-blue-400 font-bold text-[11px] border border-slate-200 dark:border-slate-700 flex items-center gap-1 cursor-pointer transition-all"
+                              >
+                                <span>Inspect</span>
+                                <ChevronRight className="w-3 h-3" />
+                              </button>
                             </div>
                           </td>
                         </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ========================================================================= */}
+      {/* DRAWER A: RANGE & TOOLS DRAWER (PORTFOLIO KPIs, CSV, CATALOGUE CRUD)      */}
+      {/* ========================================================================= */}
+      {isToolsDrawerOpen && (
+        <div
+          className="fixed inset-0 z-[85] bg-black/60 backdrop-blur-xs flex items-end md:items-center md:justify-end"
+          onClick={() => setIsToolsDrawerOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Range Management and Commercial Tools"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full md:max-w-md md:h-full max-h-[88dvh] md:max-h-none bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 rounded-t-3xl md:rounded-none p-5 overflow-y-auto shadow-2xl space-y-5"
+          >
+            <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="min-w-0">
+                <h3 className="text-base font-black text-slate-900 dark:text-white">Range &amp; Commercial Tools</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  {currentCatalog?.name || 'Active Catalogue'} · {products.length} SKUs
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsToolsDrawerOpen(false)}
+                aria-label="Close tools drawer"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Active Range Metrics */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Active Portfolio Metrics</h4>
+              <div className="grid grid-cols-2 gap-2.5 text-xs tabular-nums">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">Avg RRP / Margin</span>
+                  <span className="font-mono font-black text-slate-900 dark:text-white">
+                    ${(portfolioAnalysis?.overallAvgRrp || 0).toFixed(2)} · {(portfolioAnalysis?.overallAvgMargin || 0).toFixed(1)}%
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">Annual Baseline Val</span>
+                  <span className="font-mono font-black text-slate-900 dark:text-white">
+                    {formatAud(portfolioAnalysis?.totalAnnualBaselineRevenueAud || 0)}
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">Weekly Units</span>
+                  <span className="font-mono font-black text-blue-600 dark:text-blue-400">
+                    {formatNumber(Math.round((portfolioAnalysis?.totalAnnualBaselineUnits || 0) / 52))} u/wk
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">Scan Rebate Eligible</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400">
+                    {products.filter(p => p.supplierCoOpEligible).length} / {products.length} SKUs
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* CSV & Auto-Plan Tools */}
+            <div className="space-y-2">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Data &amp; Planning Actions</h4>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDrawerOpen(false);
+                    onOpenUploadModal();
+                  }}
+                  className="min-h-[44px] w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  <span className="flex items-center gap-2"><Upload className="w-4 h-4" /> Import Range CSV</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDrawerOpen(false);
+                    onAutoGeneratePlanFromRange();
+                  }}
+                  className="min-h-[44px] w-full flex items-center justify-between px-4 py-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-500/15 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-500/30 text-xs font-bold cursor-pointer"
+                >
+                  <span className="flex items-center gap-2"><Sparkles className="w-4 h-4" /> Auto-Build 52-Week Promo Plan</span>
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadTemplate}
+                    className="min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                  >
+                    <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                    <span>CSV Template</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleExportCsv}
+                    className="min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                  >
+                    <Download className="w-4 h-4 text-blue-600" />
+                    <span>Export CSV</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Catalogue Management */}
+            <div className="space-y-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300">Manage Catalogue Ranges</h4>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  id="btn-create-new-range"
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDrawerOpen(false);
+                    handleOpenCreateCatalog();
+                  }}
+                  className="min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold cursor-pointer"
+                >
+                  <FolderPlus className="w-4 h-4" />
+                  <span>New Range</span>
+                </button>
+                <button
+                  id="btn-edit-active-range"
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDrawerOpen(false);
+                    handleOpenEditCatalog();
+                  }}
+                  className="min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  <span>Edit Details</span>
+                </button>
+                <button
+                  id="btn-duplicate-range"
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDrawerOpen(false);
+                    handleDuplicateCatalog();
+                  }}
+                  className="min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 text-xs font-semibold cursor-pointer"
+                >
+                  <Copy className="w-4 h-4" />
+                  <span>Duplicate</span>
+                </button>
+                {catalogs.length > 1 && currentCatalog && (
+                  <button
+                    id="btn-delete-range"
+                    type="button"
+                    onClick={() => {
+                      setIsToolsDrawerOpen(false);
+                      setCatalogToDelete(currentCatalog);
+                    }}
+                    className="min-h-[44px] flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-rose-50 dark:bg-rose-500/10 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 text-xs font-semibold cursor-pointer"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                    <span>Delete Range</span>
+                  </button>
+                )}
+              </div>
+
+              {products.length > 0 && (
+                <button
+                  id="btn-clear-all-skus"
+                  type="button"
+                  onClick={() => {
+                    setIsToolsDrawerOpen(false);
+                    setIsClearAllModalOpen(true);
+                  }}
+                  className="min-h-[44px] w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 border border-rose-200/70 dark:border-rose-500/20 text-xs font-bold cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Clear All SKUs in Range ({products.length})</span>
+                </button>
               )}
-            </tbody>
-          </table>
+            </div>
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* DRAWER B: MOBILE SORT & FILTER BOTTOM SHEET                               */}
+      {/* ========================================================================= */}
+      {isFilterSortSheetOpen && (
+        <div
+          className="fixed inset-0 z-[85] bg-black/60 backdrop-blur-xs flex items-end md:items-center md:justify-center"
+          onClick={() => setIsFilterSortSheetOpen(false)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="Sort and Filter SKUs"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full md:max-w-lg max-h-[88dvh] bg-white dark:bg-slate-900 border-t md:border border-slate-200 dark:border-slate-800 rounded-t-3xl md:rounded-3xl flex flex-col overflow-hidden shadow-2xl"
+          >
+            <div className="px-5 py-4 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between shrink-0">
+              <h3 className="text-base font-black text-slate-900 dark:text-white">Sort &amp; Filter SKUs</h3>
+              <button
+                type="button"
+                onClick={() => setIsFilterSortSheetOpen(false)}
+                aria-label="Close sort and filter sheet"
+                className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto space-y-5 text-xs">
+              {/* Sort Order */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-700 dark:text-slate-300">Sort By</span>
+                  <button
+                    type="button"
+                    onClick={() => setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                    className="min-h-[36px] px-3 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <ArrowUpDown className="w-3.5 h-3.5" />
+                    <span>{sortOrder === 'asc' ? 'Ascending' : 'Descending'}</span>
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2">
+                  {(['sku', 'name', 'rrp', 'margin', 'units', 'projectedPromoRevenue'] as SortField[]).map((field) => (
+                    <button
+                      key={field}
+                      type="button"
+                      onClick={() => setSortBy(field)}
+                      className={`min-h-[40px] px-3 py-2 rounded-xl border text-left font-semibold cursor-pointer transition-colors ${
+                        sortBy === field
+                          ? 'bg-blue-600 text-white border-blue-600'
+                          : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                      }`}
+                    >
+                      {sortLabelMap[field]}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Quick Filter Presets */}
+              <div className="space-y-2">
+                <span className="font-bold text-slate-700 dark:text-slate-300 block">Quick Views</span>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('all')}
+                    className={`min-h-[40px] px-3 py-2 rounded-xl border font-semibold cursor-pointer ${
+                      activeFiltersCount === 0
+                        ? 'bg-blue-600 text-white border-blue-600'
+                        : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    All SKUs ({products.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('high_margin')}
+                    className={`min-h-[40px] px-3 py-2 rounded-xl border font-semibold cursor-pointer ${
+                      marginBracket === 'high_50'
+                        ? 'bg-emerald-600 text-white border-emerald-600'
+                        : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    High Margin 50%+
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('volume_heroes')}
+                    className={`min-h-[40px] px-3 py-2 rounded-xl border font-semibold cursor-pointer ${
+                      selectedTier === 'tier1_hero'
+                        ? 'bg-amber-600 text-white border-amber-600'
+                        : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    Tier 1 Heroes
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleApplyPreset('gap_skus')}
+                    className={`min-h-[40px] px-3 py-2 rounded-xl border font-semibold cursor-pointer ${
+                      promoActivityFilter === 'unpromoted_gap'
+                        ? 'bg-purple-600 text-white border-purple-600'
+                        : 'bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-800'
+                    }`}
+                  >
+                    Unscheduled Gaps
+                  </button>
+                </div>
+              </div>
+
+              {/* Filter Selects */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block">Category</label>
+                  <select
+                    value={selectedCategory}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      setSelectedSubcategory('ALL');
+                    }}
+                    className="w-full min-h-[44px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
+                  >
+                    <option value="ALL">All Categories ({products.length})</option>
+                    {categories.map((cat, idx) => (
+                      <option key={`mcat-${cat}-${idx}`} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block">Subcategory</label>
+                  <select
+                    value={selectedSubcategory}
+                    onChange={(e) => setSelectedSubcategory(e.target.value)}
+                    className="w-full min-h-[44px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
+                  >
+                    <option value="ALL">All Subcategories</option>
+                    {subcategories.map((sub, idx) => (
+                      <option key={`msub-${sub}-${idx}`} value={sub}>{sub}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block">RRP Bracket</label>
+                  <select
+                    value={rrpBracket}
+                    onChange={(e) => setRrpBracket(e.target.value as any)}
+                    className="w-full min-h-[44px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
+                  >
+                    <option value="ALL">All Price Points</option>
+                    <option value="under_20">&lt; $20 AUD (Impulse)</option>
+                    <option value="20_50">$20 - $50 AUD (Core Mass)</option>
+                    <option value="50_150">$50 - $150 AUD (Mid-Tier)</option>
+                    <option value="150_plus">$150+ AUD (High-Ticket)</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="font-semibold text-slate-700 dark:text-slate-300 block">Trade Funding</label>
+                  <select
+                    value={fundingStatus}
+                    onChange={(e) => setFundingStatus(e.target.value as any)}
+                    className="w-full min-h-[44px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
+                  >
+                    <option value="ALL">All Funding Models</option>
+                    <option value="coop">Vendor Scan Rebate Eligible</option>
+                    <option value="retailer">Retailer Funded Only</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="px-5 py-3.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-2.5 shrink-0 bg-white dark:bg-slate-900">
+              <button
+                type="button"
+                onClick={handleResetFilters}
+                className="min-h-[44px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 font-semibold text-xs cursor-pointer"
+              >
+                Reset
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsFilterSortSheetOpen(false)}
+                className="flex-1 min-h-[44px] px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer tabular-nums"
+              >
+                Show {filteredProducts.length} SKUs
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* DRAWER C: SKU DETAIL BOTTOM SHEET (MOBILE) / SLIDE-OVER DRAWER (DESKTOP)  */}
+      {/* ========================================================================= */}
+      {inspectedSku && (() => {
+        const promoStats = skuPromoStatsMap[inspectedSku.sku];
+        const health = getSkuHealthSummary(inspectedSku);
+        const invForecast = computeSkuInventoryForecast(inspectedSku, skuPromoDemandMap.get(inspectedSku.sku));
+        return (
+          <div
+            className="fixed inset-0 z-[85] bg-black/60 backdrop-blur-xs flex items-end md:items-center md:justify-end"
+            onClick={() => setInspectedSku(null)}
+          >
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={`Details for ${inspectedSku.name}`}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full md:max-w-lg md:h-full max-h-[88dvh] md:max-h-none bg-white dark:bg-slate-900 border-t md:border-t-0 md:border-l border-slate-200 dark:border-slate-800 rounded-t-3xl md:rounded-none p-5 overflow-y-auto shadow-2xl space-y-4"
+            >
+              {/* Header */}
+              <div className="flex items-start justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400">
+                    <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{inspectedSku.sku}</span>
+                    <span aria-hidden="true">·</span>
+                    <span>{getTierShortLabel(inspectedSku.performanceTier)}</span>
+                  </div>
+                  <h3 className="text-base font-black text-slate-900 dark:text-white mt-0.5">
+                    {inspectedSku.name}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {inspectedSku.category} · {inspectedSku.subcategory}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setInspectedSku(null)}
+                  aria-label="Close SKU details"
+                  className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 cursor-pointer shrink-0"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Financial & Volume Grid */}
+              <div className="grid grid-cols-3 gap-2.5 text-xs tabular-nums">
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">RRP / Cost</span>
+                  <span className="font-mono font-black text-slate-900 dark:text-white block mt-0.5">
+                    ${inspectedSku.rrp.toFixed(2)}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    ${inspectedSku.cost.toFixed(2)} cost
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">Base Margin</span>
+                  <span className="font-mono font-black text-emerald-600 dark:text-emerald-400 block mt-0.5">
+                    {inspectedSku.marginPercent.toFixed(1)}%
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    ${(inspectedSku.rrp - inspectedSku.cost).toFixed(2)}/u
+                  </span>
+                </div>
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800">
+                  <span className="text-[11px] text-slate-500 block">Baseline</span>
+                  <span className="font-mono font-black text-blue-600 dark:text-blue-400 block mt-0.5">
+                    {inspectedSku.weeklyUnitsBaseline} u/wk
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-400">
+                    {formatAud(inspectedSku.rrp * inspectedSku.weeklyUnitsBaseline * 52)}/yr
+                  </span>
+                </div>
+              </div>
+
+              {/* Inventory & Supply Forecast Card */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-3 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 dark:text-white flex items-center gap-1.5">
+                    <Boxes className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span>Inventory &amp; Supply Forecast</span>
+                  </span>
+                  <span
+                    className={`font-bold flex items-center gap-1 ${
+                      !invForecast.hasInventory
+                        ? 'text-slate-500 dark:text-slate-400'
+                        : invForecast.stockStatus === 'CRITICAL'
+                        ? 'text-rose-600 dark:text-rose-400'
+                        : invForecast.stockStatus === 'LOW'
+                        ? 'text-amber-600 dark:text-amber-400'
+                        : 'text-emerald-600 dark:text-emerald-400'
+                    }`}
+                  >
+                    {!invForecast.hasInventory ? (
+                      <span>Unconstrained</span>
+                    ) : invForecast.hasStockoutWarning ? (
+                      <>
+                        <AlertTriangle className="w-3.5 h-3.5" />
+                        <span>
+                          {invForecast.stockStatus === 'CRITICAL' ? 'Stockout Risk' : 'Low Cover'} · {invForecast.weeksOfCover}w cover
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle2 className="w-3.5 h-3.5" />
+                        <span>Healthy · {invForecast.weeksOfCover}w cover</span>
+                      </>
+                    )}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Leave blank (unconstrained)"
+                    value={drawerStockDraft}
+                    onChange={(e) => setDrawerStockDraft(e.target.value)}
+                    className="flex-1 min-h-[40px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-mono tabular-nums text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handleSaveInlineStock(inspectedSku, drawerStockDraft)}
+                    className="min-h-[40px] px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer whitespace-nowrap"
+                  >
+                    Save
+                  </button>
+                  {invForecast.hasInventory && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDrawerStockDraft('');
+                        handleSaveInlineStock(inspectedSku, '');
+                      }}
+                      className="min-h-[40px] px-3 py-2 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700 font-semibold text-xs cursor-pointer whitespace-nowrap"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+
+                {invForecast.hasInventory ? (
+                  <div className="grid grid-cols-3 gap-2 pt-1 text-[11px] tabular-nums">
+                    <div>
+                      <span className="text-slate-500 block">Promo Allocated</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        {formatNumber(invForecast.allocatedForPromo)} u
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Free Stock</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        {formatNumber(invForecast.freeAvailableStock || 0)} u
+                      </span>
+                    </div>
+                    <div>
+                      <span className="text-slate-500 block">Weeks of Cover</span>
+                      <span className="font-mono font-bold text-slate-900 dark:text-white">
+                        {invForecast.weeksOfCover} wks
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Inventory is left blank — stockout alerts are ignored and forecasting assumes unconstrained supply.
+                  </p>
+                )}
+
+                {invForecast.hasInventory && invForecast.annualShortfallUnits > 0 && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-[11px] text-rose-700 dark:text-rose-300 flex items-start gap-2">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                    <span>
+                      52-week promo demand ({formatNumber(invForecast.allocatedForPromo)} u) exceeds on-hand stock by{' '}
+                      <strong className="font-mono">{formatNumber(invForecast.annualShortfallUnits)} units</strong>.
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {/* 52-Week Plan & Compliance */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2.5 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-white">52-Week Promotional Schedule</span>
+                  <span className={`font-bold flex items-center gap-1 ${promoStats?.isClashingHiatus ? 'text-rose-600 dark:text-rose-400' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                    {promoStats?.isClashingHiatus ? <AlertTriangle className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
+                    <span>{promoStats?.isClashingHiatus ? 'Hiatus Breach' : 'Rules Compliant'}</span>
+                  </span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-200/70 dark:border-slate-800">
+                  <span className="text-slate-500">Min Hiatus Gap</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{inspectedSku.minPromoGapWeeks || 4} Weeks</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-200/70 dark:border-slate-800">
+                  <span className="text-slate-500">Co-Op Scan Rebate</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{inspectedSku.supplierCoOpEligible ? 'Eligible' : 'Retailer Funded'}</span>
+                </div>
+                <div className="flex justify-between py-1 border-b border-slate-200/70 dark:border-slate-800">
+                  <span className="text-slate-500">Seasonal Peak</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{inspectedSku.seasonalPeak || 'General'}</span>
+                </div>
+                {promoStats && promoStats.plannedWeeks.length > 0 ? (
+                  <>
+                    <div className="flex justify-between py-1 border-b border-slate-200/70 dark:border-slate-800">
+                      <span className="text-slate-500">Scheduled Weeks</span>
+                      <span className="font-mono font-bold text-blue-600 dark:text-blue-400">{promoStats.plannedWeeks.join(', ')}</span>
+                    </div>
+                    <div className="flex justify-between pt-1">
+                      <span className="text-slate-500">Projected Promo Rev</span>
+                      <span className="font-mono font-bold text-emerald-600 dark:text-emerald-400 tabular-nums">{formatAud(promoStats.totalProjectedRevenueAud)}</span>
+                    </div>
+                  </>
+                ) : (
+                  <p className="text-slate-500 pt-1">No promotional weeks assigned yet.</p>
+                )}
+              </div>
+
+              {/* Health Verdict Snapshot */}
+              <div className="p-4 rounded-2xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-white">Range Health Verdict</span>
+                  <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 tabular-nums">
+                    {health.finalScore}/100 · {health.statusLabel}
+                  </span>
+                </div>
+                {(health.riskFactors.length > 0 || health.opportunityFactors.length > 0) && (
+                  <p className="text-slate-600 dark:text-slate-300">
+                    {health.riskFactors[0] || health.opportunityFactors[0]}
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setInspectedSku(null);
+                    setRangeSubTab('health');
+                  }}
+                  className="text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:underline cursor-pointer"
+                >
+                  Open full Health Review →
+                </button>
+              </div>
+
+              {/* Sheet Action Bar */}
+              <div className="pt-2 flex items-center gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const target = inspectedSku;
+                    setInspectedSku(null);
+                    setSkuToDelete(target);
+                  }}
+                  className="flex-1 min-h-[44px] px-4 py-2.5 rounded-xl bg-rose-50 dark:bg-rose-500/15 hover:bg-rose-100 text-rose-700 dark:text-rose-300 border border-rose-200 dark:border-rose-500/30 font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete SKU</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setInspectedSku(null)}
+                  className="flex-1 min-h-[44px] px-4 py-2.5 rounded-xl bg-slate-900 dark:bg-blue-600 text-white font-bold text-xs cursor-pointer"
+                >
+                  Done
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ========================================================================= */}
       {/* 7. MODALS: SINGLE SKU DELETE CONFIRMATION MODAL                           */}
       {/* ========================================================================= */}
       {skuToDelete && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-rose-400">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Delete SKU Confirmation</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Delete SKU Confirmation</h3>
               </div>
-              <button onClick={() => setSkuToDelete(null)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setSkuToDelete(null)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300">
-              Are you sure you want to remove SKU <span className="text-amber-400 font-mono font-bold">{skuToDelete.sku}</span> (<span className="text-white font-bold">{skuToDelete.name}</span>) from the catalog?
+            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+              Are you sure you want to remove SKU <span className="text-amber-600 dark:text-amber-400 font-mono font-bold">{skuToDelete.sku}</span> (<span className="text-slate-900 dark:text-white font-bold">{skuToDelete.name}</span>) from the catalog?
             </p>
 
-            <div className="p-3 rounded-xl bg-slate-950 border border-slate-800 text-xs space-y-1">
-              <p className="text-slate-400">Category: <span className="text-white">{skuToDelete.category} - {skuToDelete.subcategory}</span></p>
-              <p className="text-slate-400">RRP: <span className="text-white">${skuToDelete.rrp.toFixed(2)} AUD</span></p>
-              <p className="text-slate-400">Baseline Volume: <span className="text-white">{skuToDelete.weeklyUnitsBaseline} units/week</span></p>
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs space-y-1">
+              <p className="text-slate-500 dark:text-slate-400">Category: <span className="text-slate-900 dark:text-white font-medium">{skuToDelete.category} - {skuToDelete.subcategory}</span></p>
+              <p className="text-slate-500 dark:text-slate-400">RRP: <span className="text-slate-900 dark:text-white font-mono font-semibold">${skuToDelete.rrp.toFixed(2)} AUD</span></p>
+              <p className="text-slate-500 dark:text-slate-400">Baseline Volume: <span className="text-slate-900 dark:text-white font-mono">{skuToDelete.weeklyUnitsBaseline} units/week</span></p>
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2 text-xs">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setSkuToDelete(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmSingleDelete}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                className="min-h-[40px] px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Confirm Delete</span>
@@ -1743,46 +2682,46 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 8. MODALS: BULK MULTI-SKU DELETE CONFIRMATION MODAL                       */}
       {/* ========================================================================= */}
       {isBulkDeleteModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-rose-400">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Bulk Delete {selectedSkus.length} SKUs</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Bulk Delete {selectedSkus.length} SKUs</h3>
               </div>
-              <button onClick={() => setIsBulkDeleteModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setIsBulkDeleteModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300">
-              Are you sure you want to permanently delete the <span className="text-white font-bold">{selectedSkus.length} selected SKU(s)</span> from this range?
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Are you sure you want to permanently delete the <span className="text-slate-900 dark:text-white font-bold">{selectedSkus.length} selected SKU(s)</span> from this range?
             </p>
 
-            <div className="max-h-40 overflow-y-auto p-3 rounded-xl bg-slate-950 border border-slate-800 space-y-1 font-mono text-[11px]">
+            <div className="max-h-40 overflow-y-auto p-3 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 space-y-1 font-mono text-[11px]">
               {selectedSkus.map(sku => {
                 const prod = products.find(p => p.sku === sku);
                 return (
-                  <div key={sku} className="flex items-center justify-between text-slate-300 py-0.5 border-b border-slate-900">
-                    <span className="text-blue-400 font-bold">{sku}</span>
-                    <span className="text-slate-400 truncate max-w-[200px] font-sans">{prod?.name || sku}</span>
+                  <div key={sku} className="flex items-center justify-between text-slate-700 dark:text-slate-300 py-0.5 border-b border-slate-200 dark:border-slate-900">
+                    <span className="text-blue-600 dark:text-blue-400 font-bold">{sku}</span>
+                    <span className="text-slate-500 dark:text-slate-400 truncate max-w-[180px] font-sans">{prod?.name || sku}</span>
                   </div>
                 );
               })}
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2 text-xs">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setIsBulkDeleteModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmBulkDelete}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                className="min-h-[40px] px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Delete {selectedSkus.length} SKUs</span>
@@ -1796,38 +2735,38 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 9. MODALS: CLEAR ALL SKUS CONFIRMATION MODAL                              */}
       {/* ========================================================================= */}
       {isClearAllModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-rose-400">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Clear All SKUs in Range</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Clear All SKUs in Range</h3>
               </div>
-              <button onClick={() => setIsClearAllModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setIsClearAllModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300">
-              This will remove all <span className="text-white font-bold">{products.length} SKUs</span> from the current range ("<span className="text-blue-400 font-bold">{currentCatalog?.name || 'Active Range'}</span>").
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              This will remove all <span className="text-slate-900 dark:text-white font-bold">{products.length} SKUs</span> from the current range ("<span className="text-blue-600 dark:text-blue-400 font-bold">{currentCatalog?.name || 'Active Range'}</span>").
             </p>
 
-            <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/30 text-xs text-rose-300">
+            <div className="p-3 rounded-xl bg-rose-50 dark:bg-rose-500/10 border border-rose-200 dark:border-rose-500/30 text-xs text-rose-700 dark:text-rose-300">
               You can restore the previous list using the Undo button that appears immediately after deletion.
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2 text-xs">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setIsClearAllModalOpen(false)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmClearAll}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                className="min-h-[40px] px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Clear All ({products.length})</span>
@@ -1841,73 +2780,73 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 10. MODALS: CREATE NEW CATALOGUE MODAL                                    */}
       {/* ========================================================================= */}
       {isCreateCatalogModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <FolderPlus className="w-5 h-5 text-blue-400" />
-                <h3 className="text-base font-bold text-white">Create New SKU Range / Catalogue</h3>
+                <FolderPlus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Create New SKU Range</h3>
               </div>
-              <button onClick={() => setIsCreateCatalogModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setIsCreateCatalogModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateCatalogSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Range / Catalogue Name *</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Range / Catalogue Name *</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Core Hardware & Garden Range"
                   value={newCatalogName}
                   onChange={(e) => setNewCatalogName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Retailer Channel / Banner</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Retailer Channel / Banner</label>
                 <input
                   type="text"
-                  placeholder="e.g. National Supermarkets / Hardware / Independent Grocers"
+                  placeholder="e.g. National Supermarkets / Hardware"
                   value={newCatalogRetailerBanner}
                   onChange={(e) => setNewCatalogRetailerBanner(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Primary Category Focus</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Primary Category Focus</label>
                 <input
                   type="text"
-                  placeholder="e.g. Hardware & Garden / Beverages / Health"
+                  placeholder="e.g. Hardware & Garden / Beverages"
                   value={newCatalogCategoryFocus}
                   onChange={(e) => setNewCatalogCategoryFocus(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Range Description</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Range Description</label>
                 <textarea
                   rows={2}
                   placeholder="Brief note on trade terms or channel strategy..."
                   value={newCatalogDescription}
                   onChange={(e) => setNewCatalogDescription(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 resize-none"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
 
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl">
+              <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={newCatalogCloneFromCurrent}
                     onChange={(e) => setNewCatalogCloneFromCurrent(e.target.checked)}
-                    className="rounded text-blue-500 bg-slate-900 border-slate-700"
+                    className="rounded text-blue-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700"
                   />
-                  <span className="text-slate-300 font-semibold">
+                  <span className="text-slate-700 dark:text-slate-300 font-semibold">
                     Clone current range SKUs ({products.length} items) into new range
                   </span>
                 </label>
@@ -1916,17 +2855,17 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                 </p>
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsCreateCatalogModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                  className="min-h-[40px] px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
                 >
                   <FolderPlus className="w-3.5 h-3.5" />
                   <span>Create Range</span>
@@ -1941,71 +2880,71 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 11. MODALS: EDIT ACTIVE CATALOGUE DETAILS MODAL                           */}
       {/* ========================================================================= */}
       {isEditCatalogModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
               <div className="flex items-center gap-2">
-                <Edit3 className="w-5 h-5 text-blue-400" />
-                <h3 className="text-base font-bold text-white">Edit Range Details</h3>
+                <Edit3 className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Edit Range Details</h3>
               </div>
-              <button onClick={() => setIsEditCatalogModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setIsEditCatalogModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleEditCatalogSubmit} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Range Name *</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Range Name *</label>
                 <input
                   type="text"
                   required
                   value={newCatalogName}
                   onChange={(e) => setNewCatalogName(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Retailer Channel / Banner</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Retailer Channel / Banner</label>
                 <input
                   type="text"
                   value={newCatalogRetailerBanner}
                   onChange={(e) => setNewCatalogRetailerBanner(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Category Focus</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Category Focus</label>
                 <input
                   type="text"
                   value={newCatalogCategoryFocus}
                   onChange={(e) => setNewCatalogCategoryFocus(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Description</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Description</label>
                 <textarea
                   rows={2}
                   value={newCatalogDescription}
                   onChange={(e) => setNewCatalogDescription(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 resize-none"
+                  className="w-full bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 resize-none"
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsEditCatalogModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md cursor-pointer"
+                  className="min-h-[40px] px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold shadow-md cursor-pointer"
                 >
                   Save Changes
                 </button>
@@ -2019,34 +2958,34 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 12. MODALS: DELETE CATALOGUE MODAL                                       */}
       {/* ========================================================================= */}
       {catalogToDelete && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2 text-rose-400">
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <div className="flex items-center gap-2 text-rose-600 dark:text-rose-400">
                 <AlertTriangle className="w-5 h-5" />
-                <h3 className="text-base font-bold text-white">Delete Entire Range</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Delete Entire Range</h3>
               </div>
-              <button onClick={() => setCatalogToDelete(null)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setCatalogToDelete(null)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <p className="text-xs text-slate-300">
-              Are you sure you want to permanently delete the range <span className="text-white font-bold">"{catalogToDelete.name}"</span>?
+            <p className="text-xs text-slate-600 dark:text-slate-300">
+              Are you sure you want to permanently delete the range <span className="text-slate-900 dark:text-white font-bold">"{catalogToDelete.name}"</span>?
             </p>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end gap-2 text-xs">
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setCatalogToDelete(null)}
-                className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleConfirmDeleteCatalog}
-                className="px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
+                className="min-h-[40px] px-5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold shadow-md cursor-pointer flex items-center gap-1.5"
               >
                 <Trash2 className="w-3.5 h-3.5" />
                 <span>Confirm Delete</span>
@@ -2060,68 +2999,68 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 13. MODALS: ADD NEW PRODUCT MODAL                                         */}
       {/* ========================================================================= */}
       {isAddModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-2xl w-full shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white flex items-center gap-2">
-                <Plus className="w-5 h-5 text-blue-400" />
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-2xl w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-5 animate-in fade-in zoom-in-95">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white flex items-center gap-2">
+                <Plus className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <span>Add Single SKU to Range</span>
               </h3>
-              <button onClick={() => setIsAddModalOpen(false)} className="text-slate-400 hover:text-white cursor-pointer font-bold">
+              <button onClick={() => setIsAddModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white cursor-pointer">
                 <X className="w-5 h-5" />
               </button>
             </div>
 
             <form onSubmit={handleCreateProduct} className="space-y-4 text-xs">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">SKU Code *</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">SKU Code *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. SKU-BEV-009"
                     value={newSku}
                     onChange={(e) => setNewSku(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Product Name *</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Product Name *</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Sparkling Mineral Water 1L"
                     value={newName}
                     onChange={(e) => setNewName(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Department Category</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Department Category</label>
                   <input
                     type="text"
                     required
                     value={newCategory}
                     onChange={(e) => setNewCategory(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Subcategory</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Subcategory</label>
                   <input
                     type="text"
                     required
                     value={newSubcategory}
                     onChange={(e) => setNewSubcategory(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">RRP ($ AUD) *</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">RRP ($ AUD) *</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
                     <input
@@ -2130,13 +3069,13 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                       required
                       value={newRrp}
                       onChange={(e) => setNewRrp(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                      className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-7 pr-3 py-2 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Unit Cost ($ AUD) *</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Unit Cost ($ AUD) *</label>
                   <div className="relative">
                     <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-bold">$</span>
                     <input
@@ -2145,27 +3084,42 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                       required
                       value={newCost}
                       onChange={(e) => setNewCost(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-7 pr-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                      className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl pl-7 pr-3 py-2 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Weekly Baseline Units</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Weekly Baseline Units</label>
                   <input
                     type="number"
                     value={newBaselineUnits}
                     onChange={(e) => setNewBaselineUnits(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono focus:outline-none focus:border-blue-500"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
                   />
                 </div>
 
                 <div>
-                  <label className="block font-semibold text-slate-300 mb-1">Performance Tier</label>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Inventory On Hand (Optional)
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    placeholder="Leave blank (unconstrained)"
+                    value={newStockLevel}
+                    onChange={(e) => setNewStockLevel(e.target.value)}
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-mono focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div className="sm:col-span-2">
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Performance Tier</label>
                   <select
                     value={newPerformanceTier}
                     onChange={(e) => setNewPerformanceTier(e.target.value as PerformanceTier)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
                   >
                     <option value="tier1_hero">Tier 1: High Volume Hero</option>
                     <option value="tier2_margin">Tier 2: Margin Builder</option>
@@ -2175,30 +3129,30 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                 </div>
               </div>
 
-              <div className="p-3 bg-slate-950 border border-slate-800 rounded-xl flex items-center justify-between">
+              <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl flex items-center justify-between gap-3">
                 <div>
-                  <label className="text-slate-200 font-semibold block">Supplier Scan Rebate Co-Op</label>
+                  <label className="text-slate-800 dark:text-slate-200 font-semibold block">Supplier Scan Rebate Co-Op</label>
                   <p className="text-[11px] text-slate-500">Enable vendor scan funding on this SKU during promotional weeks.</p>
                 </div>
                 <input
                   type="checkbox"
                   checked={newCoOpEligible}
                   onChange={(e) => setNewCoOpEligible(e.target.checked)}
-                  className="rounded text-blue-500 bg-slate-900 border-slate-700 w-4 h-4 cursor-pointer"
+                  className="rounded text-blue-600 bg-white dark:bg-slate-900 border-slate-300 dark:border-slate-700 w-4 h-4 cursor-pointer shrink-0"
                 />
               </div>
 
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
                 <button
                   type="button"
                   onClick={() => setIsAddModalOpen(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold cursor-pointer"
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-semibold cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-md cursor-pointer"
+                  className="min-h-[40px] px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold shadow-md cursor-pointer"
                 >
                   Add SKU
                 </button>
@@ -2212,26 +3166,26 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       {/* 14. MODALS: BULK CATEGORY, TAGS, DISCOUNT, TIER MODALS                    */}
       {/* ========================================================================= */}
       {bulkCategoryModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Bulk Assign Category ({selectedSkus.length} SKUs)</h3>
-              <button onClick={() => setBulkCategoryModalOpen(false)} className="text-slate-400 hover:text-white font-bold">×</button>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Bulk Assign Category ({selectedSkus.length} SKUs)</h3>
+              <button onClick={() => setBulkCategoryModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleApplyBulkCategory} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Target Category</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Target Category</label>
                 <input
                   type="text"
                   required
                   value={newBulkCategory}
                   onChange={(e) => setNewBulkCategory(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
                 />
               </div>
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
-                <button type="button" onClick={() => setBulkCategoryModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold">Apply</button>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                <button type="button" onClick={() => setBulkCategoryModalOpen(false)} className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Cancel</button>
+                <button type="submit" className="min-h-[40px] px-5 py-2 rounded-xl bg-blue-600 text-white font-bold">Apply</button>
               </div>
             </form>
           </div>
@@ -2239,27 +3193,27 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       )}
 
       {bulkTagsModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Bulk Add Tags ({selectedSkus.length} SKUs)</h3>
-              <button onClick={() => setBulkTagsModalOpen(false)} className="text-slate-400 hover:text-white font-bold">×</button>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Bulk Add Tags ({selectedSkus.length} SKUs)</h3>
+              <button onClick={() => setBulkTagsModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleApplyBulkTags} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Tags (Comma-separated)</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Tags (Comma-separated)</label>
                 <input
                   type="text"
                   required
                   placeholder="e.g. Q4 Peak, Hero, Scan Deal"
                   value={newBulkTags}
                   onChange={(e) => setNewBulkTags(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
                 />
               </div>
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
-                <button type="button" onClick={() => setBulkTagsModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-amber-600 text-white font-bold">Apply Tags</button>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                <button type="button" onClick={() => setBulkTagsModalOpen(false)} className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Cancel</button>
+                <button type="submit" className="min-h-[40px] px-5 py-2 rounded-xl bg-amber-600 text-white font-bold">Apply Tags</button>
               </div>
             </form>
           </div>
@@ -2267,15 +3221,15 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       )}
 
       {bulkDiscountModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Bulk % Price Adjustment ({selectedSkus.length} SKUs)</h3>
-              <button onClick={() => setBulkDiscountModalOpen(false)} className="text-slate-400 hover:text-white font-bold">×</button>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Bulk % Price Adjustment ({selectedSkus.length} SKUs)</h3>
+              <button onClick={() => setBulkDiscountModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleApplyBulkDiscount} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Adjustment Percentage (e.g. -10 for 10% discount, +5 for increase)</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Adjustment Percentage (e.g. -10 for 10% discount, +5 for increase)</label>
                 <div className="relative">
                   <input
                     type="number"
@@ -2283,14 +3237,14 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                     required
                     value={bulkPctChange}
                     onChange={(e) => setBulkPctChange(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white font-mono"
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-mono"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400">%</span>
                 </div>
               </div>
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
-                <button type="button" onClick={() => setBulkDiscountModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">Apply {bulkPctChange}%</button>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                <button type="button" onClick={() => setBulkDiscountModalOpen(false)} className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Cancel</button>
+                <button type="submit" className="min-h-[40px] px-5 py-2 rounded-xl bg-emerald-600 text-white font-bold">Apply {bulkPctChange}%</button>
               </div>
             </form>
           </div>
@@ -2298,19 +3252,19 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
       )}
 
       {bulkTierModalOpen && (
-        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 max-w-md w-full shadow-2xl space-y-4 animate-in fade-in">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-bold text-white">Bulk Set Performance Tier ({selectedSkus.length} SKUs)</h3>
-              <button onClick={() => setBulkTierModalOpen(false)} className="text-slate-400 hover:text-white font-bold">×</button>
+        <div className="fixed inset-0 bg-black/75 backdrop-blur-xs z-[90] flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-5 sm:p-6 max-w-md w-full max-h-[90dvh] overflow-y-auto shadow-2xl space-y-4 animate-in fade-in">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+              <h3 className="text-base font-bold text-slate-900 dark:text-white">Bulk Set Performance Tier ({selectedSkus.length} SKUs)</h3>
+              <button onClick={() => setBulkTierModalOpen(false)} className="min-w-[40px] min-h-[40px] flex items-center justify-center rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={handleApplyBulkTier} className="space-y-4 text-xs">
               <div>
-                <label className="block font-semibold text-slate-300 mb-1">Target Performance Tier</label>
+                <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Target Performance Tier</label>
                 <select
                   value={newBulkTier}
                   onChange={(e) => setNewBulkTier(e.target.value as PerformanceTier)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white"
+                  className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white"
                 >
                   <option value="tier1_hero">Tier 1: High Volume Hero</option>
                   <option value="tier2_margin">Tier 2: Margin Builder</option>
@@ -2318,9 +3272,9 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                   <option value="tier4_clearance">Tier 4: Clearance</option>
                 </select>
               </div>
-              <div className="pt-3 border-t border-slate-800 flex justify-end gap-2">
-                <button type="button" onClick={() => setBulkTierModalOpen(false)} className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300">Cancel</button>
-                <button type="submit" className="px-5 py-2 rounded-xl bg-blue-600 text-white font-bold">Apply Tier</button>
+              <div className="pt-3 border-t border-slate-100 dark:border-slate-800 flex justify-end gap-2">
+                <button type="button" onClick={() => setBulkTierModalOpen(false)} className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">Cancel</button>
+                <button type="submit" className="min-h-[40px] px-5 py-2 rounded-xl bg-blue-600 text-white font-bold">Apply Tier</button>
               </div>
             </form>
           </div>

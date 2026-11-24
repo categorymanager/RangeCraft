@@ -19,8 +19,8 @@ import {
   RefreshCw,
   Boxes
 } from 'lucide-react';
-import { Product, PerformanceTier, StrategicObjective, ThemeMode } from '../types';
-import { formatAud } from '../utils/formatters';
+import { Product, PerformanceTier, ThemeMode } from '../types';
+import { normalizeOptionalStock } from '../utils/inventoryForecast';
 
 interface ProductRangeEditorModalProps {
   isOpen: boolean;
@@ -78,13 +78,23 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
   const handleUpdateProduct = (indexOrSku: string, field: keyof Product, value: any) => {
     setProductList(prev => prev.map(p => {
       if (p.sku === indexOrSku) {
-        const updated = { ...p, [field]: value };
+        const updated = { ...p };
+        if (field === 'stockLevel') {
+          const normalized = normalizeOptionalStock(value);
+          if (normalized !== undefined) {
+            updated.stockLevel = normalized;
+          } else {
+            delete updated.stockLevel;
+          }
+        } else {
+          (updated as any)[field] = value;
+        }
         // If cost or rrp changes, recalculate margin
         if (field === 'cost' || field === 'rrp') {
           const cost = field === 'cost' ? Number(value) : p.cost;
           const rrp = field === 'rrp' ? Number(value) : p.rrp;
           if (rrp > 0) {
-            updated.regularMarginPercent = Number((((rrp - cost) / rrp) * 100).toFixed(1));
+            updated.marginPercent = Number((((rrp - cost) / rrp) * 100).toFixed(1));
           }
         }
         return updated;
@@ -151,25 +161,35 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
   };
 
   // Add new Product Form State
-  const [newSku, setNewSku] = useState<Partial<Product>>({
+  const [newSku, setNewSku] = useState<{
+    sku: string;
+    name: string;
+    category: string;
+    subcategory: string;
+    cost: number;
+    rrp: number;
+    weeklyUnitsBaseline: number;
+    minPromoGapWeeks: number;
+    performanceTier: PerformanceTier;
+    stockLevel?: number;
+  }>({
     sku: `SKU-FMC-${String(productList.length + 1).padStart(3, '0')}`,
     name: '',
     category: 'Pantry & Grocery',
     subcategory: 'Core FMCG',
     cost: 5.50,
     rrp: 12.00,
-    regularMarginPercent: 54.2,
     weeklyUnitsBaseline: 180,
-    hiatusWeeksRequired: 4,
-    performanceTier: 'Hero',
-    primaryStrategicObjective: 'Maximize Net Profit ($AUD)',
-    stockLevel: 1500
+    minPromoGapWeeks: 4,
+    performanceTier: 'tier1_hero',
+    stockLevel: undefined
   });
 
   const handleAddNewSkuSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newSku.name || !newSku.sku) return;
 
+    const normalizedStock = normalizeOptionalStock(newSku.stockLevel);
     const fullProduct: Product = {
       sku: newSku.sku || `SKU-${Date.now()}`,
       name: newSku.name,
@@ -182,11 +202,11 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
         : 50,
       weeklyUnitsBaseline: Number(newSku.weeklyUnitsBaseline) || 150,
       minPromoGapWeeks: Number(newSku.minPromoGapWeeks) || 4,
-      performanceTier: (newSku.performanceTier as PerformanceTier) || 'tier1_hero',
-      stockLevel: Number(newSku.stockLevel) || 1200,
+      performanceTier: newSku.performanceTier || 'tier1_hero',
       seasonalPeak: 'All Year',
       targetWeeks: [10, 20, 30, 40],
-      tags: ['Core', 'FMCG']
+      tags: ['Core', 'FMCG'],
+      ...(normalizedStock !== undefined ? { stockLevel: normalizedStock } : {})
     };
 
     setProductList(prev => [...prev, fullProduct]);
@@ -200,61 +220,60 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
       subcategory: 'Core FMCG',
       cost: 5.50,
       rrp: 12.00,
-      regularMarginPercent: 54.2,
       weeklyUnitsBaseline: 180,
-      hiatusWeeksRequired: 4,
-      performanceTier: 'Hero',
-      primaryStrategicObjective: 'Maximize Net Profit ($AUD)',
-      stockLevel: 1500
+      minPromoGapWeeks: 4,
+      performanceTier: 'tier1_hero',
+      stockLevel: undefined
     });
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md overflow-y-auto">
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-6 bg-black/80 backdrop-blur-md">
       <motion.div
         initial={{ opacity: 0, scale: 0.96, y: 15 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.96, y: 15 }}
         transition={{ duration: 0.2 }}
-        className={`w-full max-w-6xl rounded-3xl border shadow-2xl overflow-hidden flex flex-col max-h-[92vh] ${
+        className={`w-full h-[100dvh] sm:h-auto sm:max-h-[92dvh] sm:max-w-6xl rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl overflow-hidden flex flex-col ${
           isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-[#0f1424] border-slate-700 text-slate-100'
         }`}
       >
-        {/* HEADER BAR */}
-        <div className={`p-5 sm:px-8 border-b flex items-center justify-between gap-4 shrink-0 ${
+        {/* FIXED TOP HEADER BAR */}
+        <div className={`px-4 py-3 sm:px-8 sm:py-5 border-b flex items-center justify-between gap-3 shrink-0 ${
           isLight ? 'bg-white border-slate-200' : 'bg-[#151b30] border-slate-800'
         }`}>
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-600/15 border border-blue-500/30 text-blue-500 flex items-center justify-center font-bold">
+          <div className="flex items-center gap-3 min-w-0 flex-1">
+            <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-2xl bg-blue-600/15 border border-blue-500/30 text-blue-500 flex items-center justify-center font-bold shrink-0">
               <Edit3 className="w-5 h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-lg sm:text-xl font-black tracking-tight">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <h2 className="text-base sm:text-xl font-black tracking-tight truncate">
                   Product Range & Portfolio Editor
                 </h2>
                 {hasUnsavedChanges && (
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-500 border border-amber-500/30 animate-pulse">
-                    Unsaved Changes
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/30 shrink-0 whitespace-nowrap">
+                    Unsaved
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Modify retail RRPs, baseline weekly volumes, COGS costs, and ACCC hiatus compliance rules across your range.
+              <p className="text-[11px] sm:text-xs text-slate-500 dark:text-slate-400 truncate">
+                Modify retail RRPs, COGS costs, and Custom Rules hiatus intervals.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {onOpenInventoryManager && (
               <button
+                type="button"
                 onClick={() => {
                   onClose();
                   onOpenInventoryManager();
                 }}
-                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer"
+                className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold transition-all cursor-pointer whitespace-nowrap"
               >
                 <Boxes className="w-3.5 h-3.5" />
                 <span>Inventory & Stock</span>
@@ -262,16 +281,19 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
             )}
 
             <button
+              type="button"
               onClick={() => setNewSkuModalOpen(true)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs transition-all cursor-pointer"
+              className="flex items-center gap-1 px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-xs transition-all cursor-pointer whitespace-nowrap shrink-0"
             >
               <Plus className="w-4 h-4" />
-              <span>Add SKU</span>
+              <span className="hidden sm:inline">Add SKU</span>
             </button>
 
             <button
+              type="button"
               onClick={onClose}
-              className="p-2 rounded-xl text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer"
+              aria-label="Close range editor"
+              className="min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
             >
               <X className="w-5 h-5" />
             </button>
@@ -379,7 +401,8 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
                     <th className="p-3 font-bold text-right">Retail RRP</th>
                     <th className="p-3 font-bold text-center">Gross Margin</th>
                     <th className="p-3 font-bold text-center">Baseline Units/Wk</th>
-                    <th className="p-3 font-bold text-center">ACCC Hiatus</th>
+                    <th className="p-3 font-bold text-center">Inventory (Opt.)</th>
+                    <th className="p-3 font-bold text-center">Custom Hiatus</th>
                     <th className="p-3 font-bold text-center">Tier</th>
                     <th className="p-3 font-bold text-center">Actions</th>
                   </tr>
@@ -470,13 +493,41 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
                             step="10"
                             value={product.weeklyUnitsBaseline || 100}
                             onChange={(e) => handleUpdateProduct(product.sku, 'weeklyUnitsBaseline', Number(e.target.value))}
-                            className={`w-20 px-2 py-1 rounded border text-center font-mono font-semibold text-xs ${
+                            className={`w-20 px-2 py-1 rounded border text-center font-mono tabular-nums font-semibold text-xs ${
                               isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
                             }`}
                           />
                         </td>
 
-                        {/* ACCC Hiatus Required */}
+                        {/* Optional Inventory On Hand */}
+                        <td className="p-3 text-center">
+                          <div className="inline-flex items-center gap-1">
+                            <input
+                              type="number"
+                              min={0}
+                              placeholder="Blank"
+                              value={product.stockLevel ?? ''}
+                              onChange={(e) => handleUpdateProduct(product.sku, 'stockLevel', e.target.value)}
+                              aria-label={`Inventory for ${product.sku}`}
+                              className={`w-20 px-2 py-1 rounded border text-center font-mono tabular-nums font-semibold text-xs ${
+                                isLight ? 'bg-white border-slate-300 text-slate-900 placeholder:text-slate-400' : 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-500'
+                              }`}
+                            />
+                            {product.stockLevel !== undefined && product.stockLevel !== null && (
+                              <button
+                                type="button"
+                                onClick={() => handleUpdateProduct(product.sku, 'stockLevel', '')}
+                                title="Clear inventory (leave blank)"
+                                aria-label={`Clear inventory for ${product.sku}`}
+                                className="p-1 rounded text-slate-400 hover:text-rose-500 cursor-pointer"
+                              >
+                                <X className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Custom Rules Hiatus Required */}
                         <td className="p-3 text-center">
                           <select
                             value={product.minPromoGapWeeks || 4}
@@ -700,14 +751,23 @@ export const ProductRangeEditorModal: React.FC<ProductRangeEditorModalProps> = (
                   </div>
 
                   <div>
-                    <label className="block font-bold text-slate-500 dark:text-slate-400 mb-1">Initial Stock Units</label>
+                    <label className="block font-bold text-slate-500 dark:text-slate-400 mb-1">
+                      Inventory On Hand (Optional)
+                    </label>
                     <input
                       type="number"
-                      required
-                      value={newSku.stockLevel}
-                      onChange={(e) => setNewSku(prev => ({ ...prev, stockLevel: Number(e.target.value) }))}
-                      className={`w-full px-3 py-2 rounded-xl border font-mono ${
-                        isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+                      min={0}
+                      placeholder="Leave blank (unconstrained)"
+                      value={newSku.stockLevel ?? ''}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        setNewSku(prev => ({
+                          ...prev,
+                          stockLevel: raw.trim() === '' ? undefined : Math.max(0, Math.round(Number(raw)))
+                        }));
+                      }}
+                      className={`w-full px-3 py-2 rounded-xl border font-mono tabular-nums ${
+                        isLight ? 'bg-slate-50 border-slate-300 text-slate-900 placeholder:text-slate-400' : 'bg-slate-900 border-slate-700 text-white placeholder:text-slate-500'
                       }`}
                     />
                   </div>

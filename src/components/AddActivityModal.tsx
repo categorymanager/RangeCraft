@@ -56,26 +56,28 @@ export const AddActivityModal: React.FC<AddActivityModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
-      <div className={`relative w-full max-w-xl rounded-3xl border shadow-2xl overflow-hidden ${
+    <div className="fixed inset-0 z-[90] flex flex-col sm:items-center sm:justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-md animate-fade-in">
+      <div className={`relative w-full max-w-xl h-[100dvh] sm:h-auto sm:max-h-[90dvh] rounded-none sm:rounded-3xl border-0 sm:border shadow-2xl overflow-hidden flex flex-col ${
         isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#121316] border-[#27272a] text-slate-100'
       }`}>
         
         {/* Top Header */}
-        <div className="p-6 border-b border-slate-800 flex items-center justify-between">
-          <div>
+        <div className="px-4 sm:px-6 py-4 border-b border-slate-800 flex items-center justify-between gap-3 shrink-0">
+          <div className="min-w-0 flex-1">
             <div className="text-xs font-bold text-blue-400">Marketing Planner • Week {selectedWeekNum}</div>
-            <h2 className="text-xl font-black">Add Campaign Activity</h2>
+            <h2 className="text-lg sm:text-xl font-black truncate">Add Campaign Activity</h2>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            aria-label="Close modal"
+            className="min-h-[44px] min-w-[44px] rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer flex items-center justify-center shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-6 overflow-y-auto overscroll-contain flex-1 min-h-0">
           {/* Subtabs: Digital vs Offline Activities */}
           <div className="flex items-center gap-2 p-1 rounded-2xl bg-slate-950 border border-slate-800">
             <button

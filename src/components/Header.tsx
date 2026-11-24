@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { StrategyKPIs, ThemeMode, UserProfile, AppTab } from '../types';
 import { useActiveCurrency, CURRENCY_CONFIGS } from '../utils/currency';
-import { 
+import { canClaimFreeTrial, hasActivePaidSubscription } from '../utils/entitlements';
+import {
   Building2,
-  ShieldCheck, 
+  ShieldCheck,
   Sparkles,
   ChevronDown,
   Moon,
   Sun,
-  LogIn,
   Check,
   Menu,
   X,
@@ -28,7 +29,9 @@ import {
   SlidersHorizontal,
   Compass,
   Boxes,
-  HelpCircle
+  ShoppingCart,
+  LayoutGrid,
+  HelpCircle,
 } from 'lucide-react';
 
 import { RangeCraftLogo } from './RangeCraftLogo';
@@ -59,7 +62,6 @@ interface HeaderProps {
   lastSyncedTime?: string | null;
 }
 
-// 5-Step Sequential Strategy Workflow
 export interface WorkflowStep {
   id: string;
   stepNumber: number;
@@ -71,61 +73,59 @@ export interface WorkflowStep {
 }
 
 export const WORKFLOW_STEPS: WorkflowStep[] = [
-  { 
-    id: 'step-1', 
-    stepNumber: 1, 
-    title: '1. Range Diagnostics', 
-    subtitle: 'SKUs, COGS & Margins', 
-    tab: 'catalog', 
-    badge: 'Range Master', 
-    icon: Layers 
+  {
+    id: 'step-1',
+    stepNumber: 1,
+    title: '1. Range Diagnostics',
+    subtitle: 'SKUs, COGS & Margins',
+    tab: 'catalog',
+    badge: 'Range',
+    icon: Layers,
   },
-  { 
-    id: 'step-2', 
-    stepNumber: 2, 
-    title: '2. Promotional Planner', 
-    subtitle: '52-Week Promo Calendar', 
-    tab: 'calendar', 
-    badge: '52W Planner', 
-    icon: Calendar 
+  {
+    id: 'step-2',
+    stepNumber: 2,
+    title: '2. Promotional Planner',
+    subtitle: '52-Week Calendar',
+    tab: 'calendar',
+    badge: '52W Grid',
+    icon: Calendar,
   },
-  { 
-    id: 'step-3', 
-    stepNumber: 3, 
-    title: '3. Compliance Radar', 
-    subtitle: 'ACCC Hiatus & Clash Radar', 
-    tab: 'clashes', 
-    badge: 'Hiatus Radar', 
-    icon: ShieldCheck 
+  {
+    id: 'step-3',
+    stepNumber: 3,
+    title: '3. Schedule Guard',
+    subtitle: 'Custom Rules Checks',
+    tab: 'clashes',
+    badge: 'Rules',
+    icon: ShieldCheck,
   },
-  { 
-    id: 'step-4', 
-    stepNumber: 4, 
-    title: '4. Executive JBP Deck', 
-    subtitle: 'Supermarket Pitch Deck', 
-    tab: 'executive-briefing', 
-    badge: 'Board Ready', 
-    icon: FileText 
+  {
+    id: 'step-4',
+    stepNumber: 4,
+    title: '4. Executive JBP Deck',
+    subtitle: 'Buyer Pitch Export',
+    tab: 'executive-briefing',
+    badge: 'JBP Deck',
+    icon: FileText,
   },
-  { 
-    id: 'step-5', 
-    stepNumber: 5, 
-    title: '5. Lock & Export', 
-    subtitle: 'Scan Rebates & Trading Terms', 
-    tab: 'analytics', 
-    badge: 'Finalize', 
-    icon: Lock 
+  {
+    id: 'step-5',
+    stepNumber: 5,
+    title: '5. Trade Waterfall',
+    subtitle: 'Scan Rebates & Terms',
+    tab: 'analytics',
+    badge: 'Lock Plan',
+    icon: Lock,
   },
 ];
 
-// 4 Benefit-Focused Suite Navigation Groups
 interface ToolItem {
   name: string;
   description: string;
   tab: AppTab;
   badge?: string;
   icon: React.ComponentType<{ className?: string }>;
-  isNew?: boolean;
 }
 
 interface ToolSuiteGroup {
@@ -140,58 +140,65 @@ interface ToolSuiteGroup {
 export const TOOL_SUITES: ToolSuiteGroup[] = [
   {
     id: 'strategy-jbp',
-    title: 'Strategy & JBP',
+    title: 'Commercial OS',
     badge: 'Executive',
-    description: 'Commercial roadmaps, funnels and buyer pitch decks',
+    description: 'Executive performance, promotion builder & insights',
     icon: Compass,
     items: [
       {
-        name: '5-Step Commercial Journey',
-        description: 'End-to-end guided strategy from channel baseline to locked plan',
-        tab: 'commercial-journey',
-        badge: 'Guided',
+        name: 'Executive Dashboard',
+        description: 'Forecast revenue, profit & SKUs at risk',
+        tab: 'dashboard',
+        badge: 'Home',
+        icon: LayoutGrid,
+      },
+      {
+        name: 'Promotion Builder',
+        description: '4-step guided promotion validation & margin waterfall',
+        tab: 'promotion-builder',
+        badge: 'Builder',
+        icon: Zap,
+      },
+      {
+        name: 'Commercial Insights',
+        description: 'Quantified profit recovery & margin risk alerts',
+        tab: 'commercial-insights',
+        badge: 'Insights',
         icon: TrendingUp,
       },
       {
-        name: 'Executive Overview Hub',
-        description: 'Macro revenue, blended margin sandbox & category KPIs',
-        tab: 'overview',
-        badge: 'Macro',
-        icon: BarChart3,
-      },
-      {
-        name: 'Executive Pitch Deck Generator',
-        description: 'Supermarket buyer JBP slides & cross-merchandise baskets',
+        name: 'Executive Pitch Deck',
+        description: 'Buyer JBP slides & category waterfalls',
         tab: 'executive-briefing',
-        badge: 'JBP Deck',
+        badge: 'Reports',
         icon: FileText,
       },
     ],
   },
   {
     id: 'trade-compliance',
-    title: 'Trade & Compliance',
-    badge: 'ACCC Guard',
-    description: '52-week scheduling, hiatus radar and week studio',
+    title: 'Calendar & Custom Rules',
+    badge: 'Custom Rules',
+    description: '52-week scheduling and hiatus thresholds',
     icon: ShieldCheck,
     items: [
       {
-        name: '52-Week Master Calendar',
-        description: 'Interactive promotional matrix with drag-and-drop slots',
+        name: '52-Week Retail Calendar',
+        description: 'Interactive promo matrix with auto-formulate & reslotter',
         tab: 'calendar',
         badge: '52 Weeks',
         icon: Calendar,
       },
       {
-        name: 'ACCC Hiatus Radar',
-        description: 'Automated 4-week gap audit & category cannibalisation checks',
+        name: 'Custom Rules & Clash Radar',
+        description: 'Automated gap audit & custom scheduling thresholds',
         tab: 'clashes',
-        badge: 'Audit',
+        badge: 'Rules',
         icon: ShieldCheck,
       },
       {
         name: 'Week Detail Studio',
-        description: 'Weekly mechanics, scan rates, supplier funding & channel split',
+        description: 'Weekly mechanics, scan rebates & channel split',
         tab: 'week-studio',
         badge: 'Editor',
         icon: SlidersHorizontal,
@@ -200,35 +207,42 @@ export const TOOL_SUITES: ToolSuiteGroup[] = [
   },
   {
     id: 'sku-margins',
-    title: 'SKU & Margins',
+    title: 'Products & Margin',
     badge: 'Profit Engine',
-    description: 'Product matrix, scan rebates and margin simulators',
+    description: 'Product range, trade spend & carton orders',
     icon: Boxes,
     items: [
       {
         name: 'Product & SKU Matrix',
-        description: 'Master SKU catalogue, COGS, baseline units & funding tiers',
+        description: 'Master SKU catalogue, COGS, RRP & funding tiers',
         tab: 'catalog',
-        badge: 'Master',
+        badge: 'Products',
         icon: Layers,
       },
       {
-        name: 'Dead Net Waterfall & Financials',
-        description: 'Scan funding, co-op trade spend & dead net margin waterfalls',
+        name: 'Margin Simulator & Trade Spend',
+        description: 'Scan funding, co-op spend & dead net margins',
         tab: 'analytics',
-        badge: 'Waterfall',
+        badge: 'Simulator',
         icon: BarChart3,
       },
       {
+        name: 'Wholesale Carton Orders',
+        description: 'Volume break tiers, breakeven & settlement tracking',
+        tab: 'wholesale',
+        badge: 'Orders',
+        icon: ShoppingCart,
+      },
+      {
         name: 'Breakeven & Basket Simulator',
-        description: 'Volume lift modeling and cross-category basket drivers',
+        description: 'Volume lift modeling and basket drivers',
         tab: 'breakeven-basket',
         badge: 'Simulator',
         icon: Zap,
       },
       {
         name: 'SKU Deletion Engine',
-        description: 'Range rationalisation and tail SKU deletion audit',
+        description: 'Range rationalisation & tail SKU audit',
         tab: 'deletion-engine',
         badge: 'Audit',
         icon: Tag,
@@ -237,42 +251,37 @@ export const TOOL_SUITES: ToolSuiteGroup[] = [
   },
   {
     id: 'governance-crm',
-    title: 'Governance & CRM',
-    badge: 'Omni-Trade',
-    description: 'Retailer relationships, trading terms and activity logs',
+    title: 'CRM & Governance',
+    badge: 'Channels',
+    description: 'Channel terms, team & activity logs',
     icon: Users,
     items: [
       {
-        name: 'Omni-Trade B2B CRM',
-        description: 'Coles, Woolworths & Metcash buyer dossiers and deals',
+        name: 'Partner CRM & Terms',
+        description: 'Channel buyer contacts, deals & trading terms',
         tab: 'crm',
-        badge: 'Accounts',
-        icon: Users,
-      },
-      {
-        name: 'Trading Terms & Rebates',
-        description: 'Settlement discounts, scan rates and vendor agreements',
-        tab: 'crm',
-        badge: 'Terms',
+        badge: 'Channels',
         icon: Building2,
       },
       {
-        name: 'Compliance & Audit Activity Logs',
-        description: 'Timestamped audit trail of all promo moves and changes',
-        tab: 'activity-log',
-        badge: 'Logs',
-        icon: Activity,
-      },
-      {
-        name: 'Market Intelligence Benchmarks',
-        description: 'Competitor promo depth & supermarket pricing intelligence',
+        name: 'Market Intelligence',
+        description: 'Category promo depth & pricing benchmarks',
         tab: 'market-intel',
         badge: 'Intel',
         icon: Sparkles,
       },
+      {
+        name: 'Activity History & Audit Log',
+        description: 'Timestamped log of schedule edits and billing',
+        tab: 'activity-log',
+        badge: 'Logs',
+        icon: Activity,
+      },
     ],
   },
 ];
+
+const CORE_STEP_TABS: AppTab[] = ['catalog', 'calendar', 'clashes', 'executive-briefing', 'analytics'];
 
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
@@ -280,6 +289,7 @@ export const Header: React.FC<HeaderProps> = ({
   user,
   onOpenAuthModal,
   onOpenPricingModal,
+  onSignOut,
   onOpenAiOptimizer,
   onOpenAboutModal,
   onOpenInventoryManager,
@@ -289,20 +299,24 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const isLight = currentTheme.includes('light');
   const { currency, setCurrency } = useActiveCurrency();
-  
-  // State for dropdowns & mobile drawer
-  const [activeSuiteDropdown, setActiveSuiteDropdown] = useState<string | null>(null);
+
+  const [isSuitesDropdownOpen, setIsSuitesDropdownOpen] = useState(false);
   const [isCurrencyDropdownOpen, setIsCurrencyDropdownOpen] = useState(false);
   const [isMobileDrawerOpen, setIsMobileDrawerOpen] = useState(false);
-  const [mobileExpandedSuite, setMobileExpandedSuite] = useState<string | null>('strategy-jbp');
-  
-  const headerRef = useRef<HTMLDivElement>(null);
+  const [drawerTab, setDrawerTab] = useState<'overview' | 'workspaces'>(user ? 'workspaces' : 'overview');
 
-  // Close dropdowns on outside click
+  const headerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (user) {
+      setDrawerTab('workspaces');
+    }
+  }, [user]);
+
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (headerRef.current && !headerRef.current.contains(event.target as Node)) {
-        setActiveSuiteDropdown(null);
+        setIsSuitesDropdownOpen(false);
         setIsCurrencyDropdownOpen(false);
       }
     };
@@ -310,12 +324,11 @@ export const Header: React.FC<HeaderProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Close mobile drawer on ESC
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         setIsMobileDrawerOpen(false);
-        setActiveSuiteDropdown(null);
+        setIsSuitesDropdownOpen(false);
         setIsCurrencyDropdownOpen(false);
       }
     };
@@ -323,644 +336,799 @@ export const Header: React.FC<HeaderProps> = ({
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
-  // Determine which step is currently active
-  const currentStepIndex = WORKFLOW_STEPS.findIndex(s => s.tab === activeTab);
+  useEffect(() => {
+    if (!isMobileDrawerOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [isMobileDrawerOpen]);
 
+  const currentStepIndex = WORKFLOW_STEPS.findIndex(s => s.tab === activeTab);
   const currencyOptions = Object.values(CURRENCY_CONFIGS);
 
-  const handleStepClick = (tab: AppTab) => {
+  const navigateTo = (tab: AppTab) => {
     setActiveTab(tab);
     setIsMobileDrawerOpen(false);
-    setActiveSuiteDropdown(null);
+    setIsSuitesDropdownOpen(false);
   };
 
-  const handleToolItemClick = (tab: AppTab) => {
-    setActiveTab(tab);
+  const scrollToLandingSection = (sectionId: string) => {
     setIsMobileDrawerOpen(false);
-    setActiveSuiteDropdown(null);
+    if (activeTab !== 'overview') {
+      setActiveTab('overview');
+      setTimeout(() => {
+        document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
+    } else {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   };
 
-  return (
-    <header 
-      ref={headerRef}
-      id="main-app-header"
-      className={`sticky top-0 z-40 border-b transition-colors duration-200 ${
-        isLight 
-          ? 'bg-white/95 border-slate-200 text-slate-900 shadow-2xs backdrop-blur-md' 
-          : 'bg-[#0b0f19]/95 border-slate-800 text-slate-100 shadow-md backdrop-blur-md'
-      }`}
-    >
-      {/* 1. TOP NAVY PURPOSE & COMPLIANCE BANNER */}
-      <div className="w-full bg-[#0d1428] text-slate-200 border-b border-indigo-950/80 py-1.5 px-4 text-center text-xs font-semibold tracking-wide flex items-center justify-center gap-2">
-        <span className="inline-flex items-center gap-1.5 truncate">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 animate-pulse" />
-          <strong className="text-white font-bold">RangeCraft Trade Engine:</strong> Plan 52-Week Retail Schedules, Protect Margins & Enforce ACCC Hiatus Compliance for Coles, Woolworths & Metcash.
-        </span>
-      </div>
+  const primaryLinks: { label: string; tab: AppTab }[] = [
+    { label: 'Dashboard', tab: 'dashboard' },
+    { label: 'Promotions', tab: 'promotion-builder' },
+    { label: 'Products', tab: 'catalog' },
+    { label: 'Calendar', tab: 'calendar' },
+    { label: 'Insights', tab: 'commercial-insights' },
+  ];
 
-      {/* 2. MAIN HEADER TOOLBAR */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-4">
-          
-          {/* LEFT: BRAND IDENTITY & LOGO */}
-          <div className="flex items-center gap-4 shrink-0">
-            <button
-              id="header-brand-logo"
-              onClick={() => handleStepClick('overview')}
-              className="cursor-pointer text-left focus:outline-none transition-transform hover:scale-[1.02]"
-              aria-label="RangeCraft Home"
-            >
-              <RangeCraftLogo size="md" />
-            </button>
-          </div>
+  const isPublicOverview = activeTab === 'overview';
+  const showStepBar = !isPublicOverview && CORE_STEP_TABS.includes(activeTab);
 
-          {/* CENTER: 4 BENEFIT-FOCUSED TOOL SUITE DROPDOWNS (Desktop) */}
-          <nav className="hidden lg:flex items-center gap-1 xl:gap-1.5" aria-label="Suite Navigation">
-            {TOOL_SUITES.map((suite) => {
-              const isOpen = activeSuiteDropdown === suite.id;
-              const isSuiteActive = suite.items.some(item => item.tab === activeTab);
-              const SuiteIcon = suite.icon;
+  const mobileDrawerPortal =
+    typeof document !== 'undefined'
+      ? createPortal(
+          <AnimatePresence>
+            {isMobileDrawerOpen && (
+              <motion.div
+                key="mobile-drawer-backdrop"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setIsMobileDrawerOpen(false)}
+                className="fixed inset-0 z-[70] bg-slate-950/60 backdrop-blur-xs"
+                aria-hidden="true"
+              />
+            )}
 
-              return (
-                <div key={suite.id} className="relative">
-                  <button
-                    id={`header-suite-${suite.id}`}
-                    onClick={() => {
-                      setIsCurrencyDropdownOpen(false);
-                      setActiveSuiteDropdown(prev => (prev === suite.id ? null : suite.id));
-                    }}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                      isOpen || isSuiteActive
-                        ? isLight
-                          ? 'bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-2xs'
-                          : 'bg-indigo-950/70 text-indigo-300 border border-indigo-800/80 shadow-2xs'
-                        : isLight
-                          ? 'text-slate-700 hover:text-indigo-600 hover:bg-slate-100 border border-transparent'
-                          : 'text-slate-300 hover:text-indigo-400 hover:bg-slate-800/70 border border-transparent'
+            {isMobileDrawerOpen && (
+              <motion.div
+                key="mobile-drawer-panel"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Mobile Navigation Drawer"
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 28, stiffness: 260 }}
+                  className={`fixed top-0 right-0 bottom-0 z-[70] w-full max-w-sm h-[100dvh] flex flex-col border-l shadow-2xl overflow-hidden overscroll-contain ${
+                    isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0b0f19] border-slate-800 text-slate-100'
+                  }`}
+                >
+                  {/* Drawer Header */}
+                  <div
+                    className={`flex items-center justify-between px-4 py-3 border-b shrink-0 ${
+                      isLight ? 'border-slate-200' : 'border-slate-800'
                     }`}
                   >
-                    <SuiteIcon className={`w-3.5 h-3.5 ${isSuiteActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-600 dark:text-slate-300'}`} />
-                    <span>{suite.title}</span>
-                    <ChevronDown className={`w-3 h-3 text-slate-500 transition-transform ${isOpen ? 'rotate-180 text-indigo-600 dark:text-indigo-400' : ''}`} />
-                  </button>
+                    <RangeCraftLogo size="sm" showSubtitle={false} />
+                    <button
+                      type="button"
+                      onClick={() => setIsMobileDrawerOpen(false)}
+                      className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl transition-colors cursor-pointer ${
+                        isLight ? 'text-slate-600 hover:bg-slate-100' : 'text-slate-300 hover:bg-slate-800'
+                      }`}
+                      aria-label="Close Navigation Drawer"
+                    >
+                      <X className="w-5 h-5" />
+                    </button>
+                  </div>
 
-                  <AnimatePresence>
-                    {isOpen && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 6, scale: 0.98 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: 4, scale: 0.98 }}
-                        transition={{ duration: 0.12 }}
-                        className={`absolute left-0 top-full mt-2 w-76 rounded-2xl border shadow-2xl p-2 z-50 ${
-                          isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1424] border-slate-700 text-slate-100'
+                  {/* Drawer Mode Switcher (hide Overview marketing anchors when signed in) */}
+                  {!user && (
+                    <div className="px-4 pt-3 shrink-0">
+                      <div
+                        className={`grid grid-cols-2 p-1 rounded-2xl border text-xs font-bold ${
+                          isLight ? 'bg-slate-100 border-slate-200' : 'bg-slate-900 border-slate-800'
                         }`}
                       >
-                        <div className="px-3 py-1.5 mb-1.5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <SuiteIcon className="w-3.5 h-3.5 text-indigo-500" />
-                            <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                              {suite.title}
-                            </span>
-                          </div>
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                            {suite.badge}
+                        <button
+                          type="button"
+                          onClick={() => setDrawerTab('overview')}
+                          className={`min-h-[40px] py-2 rounded-xl transition-colors cursor-pointer whitespace-nowrap ${
+                            drawerTab === 'overview'
+                              ? isLight
+                                ? 'bg-white text-indigo-700 shadow-xs'
+                                : 'bg-slate-800 text-white'
+                              : 'text-slate-500'
+                          }`}
+                        >
+                          Overview & Plans
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDrawerTab('workspaces')}
+                          className={`min-h-[40px] py-2 rounded-xl transition-colors cursor-pointer whitespace-nowrap ${
+                            drawerTab === 'workspaces'
+                              ? isLight
+                                ? 'bg-white text-indigo-700 shadow-xs'
+                                : 'bg-slate-800 text-white'
+                              : 'text-slate-500'
+                          }`}
+                        >
+                          Workspaces
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Scrollable Drawer Content */}
+                  <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-5">
+                    {/* Mobile Display Preferences & AI Strategist Shortcut (Moved from Top Bar) */}
+                    <div
+                      className={`p-3.5 rounded-2xl border space-y-3 ${
+                        isLight ? 'bg-slate-50 border-slate-200/90' : 'bg-slate-900/70 border-slate-800'
+                      }`}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
+                            Display Currency
+                          </span>
+                          <span className="text-[11px] font-mono font-bold text-indigo-600 dark:text-indigo-400">
+                            {currency}
                           </span>
                         </div>
-
-                        <div className="space-y-1">
-                          {suite.items.map((item) => {
-                            const isItemActive = activeTab === item.tab;
-                            const ItemIcon = item.icon;
-
+                        <div className="grid grid-cols-5 gap-1">
+                          {currencyOptions.map((opt) => {
+                            const selected = currency === opt.code;
                             return (
                               <button
-                                key={item.name}
-                                onClick={() => handleToolItemClick(item.tab)}
-                                className={`w-full flex items-start gap-2.5 p-2.5 rounded-xl text-left transition-all cursor-pointer ${
-                                  isItemActive
-                                    ? isLight
-                                      ? 'bg-indigo-50/90 text-indigo-900 border border-indigo-200'
-                                      : 'bg-indigo-950/80 text-indigo-100 border border-indigo-800'
+                                key={opt.code}
+                                type="button"
+                                onClick={() => setCurrency(opt.code)}
+                                className={`min-h-[38px] px-1.5 py-1 rounded-xl text-[11px] font-bold transition-colors cursor-pointer flex flex-col items-center justify-center border ${
+                                  selected
+                                    ? 'bg-indigo-600 border-indigo-600 text-white shadow-xs'
                                     : isLight
-                                      ? 'hover:bg-slate-100/80 text-slate-700'
-                                      : 'hover:bg-slate-800/80 text-slate-300'
+                                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                                    : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
                                 }`}
                               >
-                                <div className={`p-1.5 rounded-lg shrink-0 mt-0.5 ${
-                                  isItemActive 
-                                    ? 'bg-indigo-600 text-white shadow-xs' 
-                                    : isLight 
-                                      ? 'bg-slate-100 text-slate-600' 
-                                      : 'bg-slate-800 text-slate-400'
-                                }`}>
-                                  <ItemIcon className="w-3.5 h-3.5" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center justify-between gap-1">
-                                    <span className="text-xs font-bold truncate">
-                                      {item.name}
-                                    </span>
-                                    {item.badge && (
-                                      <span className={`text-[9px] font-semibold px-1.5 py-0.2 rounded shrink-0 ${
-                                        isItemActive
-                                          ? 'bg-indigo-200 dark:bg-indigo-900 text-indigo-900 dark:text-indigo-200 font-bold'
-                                          : isLight
-                                            ? 'bg-slate-100 text-slate-500'
-                                            : 'bg-slate-800 text-slate-400'
-                                      }`}>
-                                        {item.badge}
-                                      </span>
-                                    )}
-                                  </div>
-                                  <p className="text-[11px] text-slate-600 dark:text-slate-300 line-clamp-1 mt-0.5">
-                                    {item.description}
-                                  </p>
-                                </div>
+                                <span className="text-xs leading-none">{opt.flag}</span>
+                                <span className="font-mono text-[10px] mt-0.5 leading-none">{opt.code}</span>
                               </button>
                             );
                           })}
                         </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              );
-            })}
-          </nav>
+                      </div>
 
-          {/* RIGHT: CURRENCY, THEME, AI STRATEGIST, PRIMARY TRIAL CTA & USER */}
-          <div className="flex items-center gap-1.5 sm:gap-2.5">
-            
-            {/* Dynamic Multi-Currency Dropdown */}
-            <div className="relative">
-              <button
-                id="header-currency-dropdown-btn"
-                onClick={() => {
-                  setActiveSuiteDropdown(null);
-                  setIsCurrencyDropdownOpen(prev => !prev);
-                }}
-                className={`flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                  isCurrencyDropdownOpen
-                    ? 'bg-indigo-50 dark:bg-indigo-950/70 border-indigo-300 dark:border-indigo-700 text-indigo-700 dark:text-indigo-300'
-                    : isLight
-                      ? 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                      : 'bg-slate-800/90 border-slate-700 hover:bg-slate-800 text-slate-200'
-                }`}
-                title="Switch Display Currency"
-                aria-label={`Current Currency: ${currency}`}
-              >
-                <span className="text-sm">{CURRENCY_CONFIGS[currency]?.flag || '🇦🇺'}</span>
-                <span className="font-mono text-xs hidden sm:inline">{currency}</span>
-                <ChevronDown className="w-3 h-3 text-slate-400" />
-              </button>
-
-              <AnimatePresence>
-                {isCurrencyDropdownOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 6, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 4, scale: 0.98 }}
-                    transition={{ duration: 0.12 }}
-                    className={`absolute right-0 top-full mt-2 w-52 rounded-2xl border shadow-2xl p-2 z-50 ${
-                      isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1424] border-slate-700 text-slate-100'
-                    }`}
-                  >
-                    <div className="px-2.5 py-1 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-600 dark:text-slate-300 uppercase tracking-wider">
-                      Select Currency Base
-                    </div>
-                    <div className="space-y-0.5">
-                      {currencyOptions.map((opt) => (
+                      <div className="flex items-center gap-2 pt-1">
                         <button
-                          key={opt.code}
+                          type="button"
+                          onClick={() => onSelectTheme(isLight ? 'dark' : 'light')}
+                          className={`flex-1 min-h-[42px] px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+                            isLight
+                              ? 'bg-white border-slate-200 text-slate-800 hover:bg-slate-100'
+                              : 'bg-slate-800 border-slate-700 text-slate-100 hover:bg-slate-700'
+                          }`}
+                        >
+                          {isLight ? (
+                            <>
+                              <Moon className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <span>Dark Mode</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sun className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span>Light Mode</span>
+                            </>
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
                           onClick={() => {
-                            setCurrency(opt.code);
-                            setIsCurrencyDropdownOpen(false);
+                            setIsMobileDrawerOpen(false);
+                            onOpenAiOptimizer();
                           }}
-                          className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
-                            currency === opt.code
-                              ? 'bg-indigo-50 dark:bg-indigo-950/80 text-indigo-700 dark:text-indigo-300 font-bold'
-                              : 'hover:bg-slate-100 dark:hover:bg-slate-800/70 text-slate-700 dark:text-slate-300'
+                          className={`flex-1 min-h-[42px] px-3 py-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
+                            isLight
+                              ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                              : 'bg-indigo-950/60 border-indigo-800 text-indigo-300 hover:bg-indigo-900/60'
                           }`}
                         >
-                          <div className="flex items-center gap-2">
-                            <span className="text-sm">{opt.flag}</span>
-                            <span>{opt.code} ({opt.symbol})</span>
-                          </div>
-                          {currency === opt.code && <Check className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />}
+                          <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                          <span>Auto-Formulate</span>
                         </button>
-                      ))}
+                      </div>
                     </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
 
-            {/* Theme Toggle Button (Moon / Sun) */}
-            <button
-              id="header-theme-toggle-btn"
-              onClick={() => onSelectTheme(currentTheme.includes('light') ? 'dark' : 'light')}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer ${
-                isLight 
-                  ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100' 
-                  : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
-              }`}
-              title={currentTheme.includes('light') ? 'Switch to Obsidian Dark Mode' : 'Switch to Executive Light Mode'}
-              aria-label="Toggle Theme"
-            >
-              {currentTheme.includes('light') ? (
-                <Moon className="w-4 h-4 text-slate-700" />
-              ) : (
-                <Sun className="w-4 h-4 text-amber-400" />
-              )}
-            </button>
-
-            {/* AI Strategist Button with pulsing badge */}
-            <button
-              id="header-ai-strategist-btn"
-              onClick={onOpenAiOptimizer}
-              className={`p-2 rounded-xl border relative transition-colors cursor-pointer hidden md:flex items-center justify-center ${
-                isLight ? 'bg-white border-slate-200 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600' : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-indigo-950/50 hover:text-indigo-300'
-              }`}
-              title="AI FMCG Strategy Co-Pilot"
-              aria-label="AI FMCG Strategy Co-Pilot"
-            >
-              <Sparkles className="w-4 h-4 text-indigo-500" />
-              <span className="w-2 h-2 rounded-full bg-indigo-500 absolute top-1.5 right-1.5 animate-pulse" />
-            </button>
-
-            {/* Help / ACCC Compliance Guide */}
-            <button
-              onClick={onOpenAboutModal}
-              className={`p-2 rounded-xl border transition-colors cursor-pointer hidden xl:flex items-center justify-center ${
-                isLight ? 'bg-white border-slate-200 text-slate-600 hover:bg-slate-100' : 'bg-slate-800 border-slate-700 text-slate-300 hover:bg-slate-700'
-              }`}
-              title="ACCC Guidelines & Help Documentation"
-              aria-label="Help Documentation"
-            >
-              <HelpCircle className="w-4 h-4" />
-            </button>
-
-            {/* QUICK ACTIONS: INVENTORY & EDIT RANGE */}
-            {onOpenInventoryManager && (
-              <button
-                onClick={onOpenInventoryManager}
-                className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                  isLight
-                    ? 'bg-white border-slate-200 hover:border-indigo-300 text-slate-700 hover:text-indigo-600 hover:bg-slate-50'
-                    : 'bg-slate-800/90 border-slate-700 hover:border-indigo-500 text-slate-200 hover:text-white hover:bg-slate-800'
-                }`}
-                title="Manage SKU stock levels & promotional reserve allocations"
-              >
-                <Boxes className="w-3.5 h-3.5 text-indigo-500" />
-                <span>Inventory</span>
-              </button>
-            )}
-
-            {onOpenEditRange && (
-              <button
-                onClick={onOpenEditRange}
-                className={`hidden xl:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
-                  isLight
-                    ? 'bg-white border-slate-200 hover:border-blue-300 text-slate-700 hover:text-blue-600 hover:bg-slate-50'
-                    : 'bg-slate-800/90 border-slate-700 hover:border-blue-500 text-slate-200 hover:text-white hover:bg-slate-800'
-                }`}
-                title="Edit Product Range RRPs, COGS & Baselines"
-              >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-blue-500" />
-                <span>Edit Range</span>
-              </button>
-            )}
-
-            {/* PRIMARY CONVERSION CTA BUTTON: "Start 14-Day Free Trial" */}
-            <button
-              id="header-primary-trial-cta"
-              onClick={onOpenPricingModal}
-              className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-500 hover:to-blue-600 text-white font-black text-xs shadow-md shadow-indigo-600/30 hover:shadow-indigo-600/45 hover:scale-[1.02] active:scale-[0.98] transition-all cursor-pointer shrink-0"
-            >
-              <Zap className="w-3.5 h-3.5 fill-amber-300 text-amber-300 shrink-0" />
-              <span className="hidden sm:inline">Start 14-Day Free Trial</span>
-              <span className="sm:hidden">Start Trial</span>
-            </button>
-
-            {/* User Account & Subscription Menu */}
-            <UserAccountMenu 
-              userEmail={user?.email || 'jzaf666@gmail.com'}
-              onOpenPricingModal={onOpenPricingModal}
-              onOpenInventoryManager={onOpenInventoryManager}
-              onOpenEditRange={onOpenEditRange}
-              onSelectTab={setActiveTab}
-              currentTheme={currentTheme}
-            />
-
-            {/* Mobile Menu Hamburger Button */}
-            <button
-              id="header-mobile-menu-toggle-btn"
-              onClick={() => setIsMobileDrawerOpen(true)}
-              className={`p-2 rounded-xl border lg:hidden transition-colors cursor-pointer ${
-                isLight ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100' : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
-              }`}
-              aria-label="Open Navigation Drawer"
-            >
-              <Menu className="w-5 h-5" />
-            </button>
-
-          </div>
-        </div>
-      </div>
-
-      {/* 3. SEQUENTIAL PROCESS STEPPER & TOOLBAR */}
-      <div className={`border-t py-2 px-4 sm:px-6 lg:px-8 transition-colors ${
-        isLight ? 'bg-slate-50/80 border-slate-200' : 'bg-[#090d16]/80 border-slate-800'
-      }`}>
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-1 overflow-x-auto no-scrollbar py-0.5">
-          {WORKFLOW_STEPS.map((step, index) => {
-            const isCompleted = currentStepIndex !== -1 && index < currentStepIndex;
-            const isActive = step.tab === activeTab;
-            const StepIcon = step.icon;
-
-            return (
-              <React.Fragment key={step.id}>
-                <button
-                  id={`header-nav-step-${step.stepNumber}`}
-                  onClick={() => handleStepClick(step.tab)}
-                  className={`flex items-center gap-2 px-3 sm:px-3.5 py-1.5 rounded-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer shrink-0 ${
-                    isActive 
-                      ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 ring-2 ring-indigo-400/50 scale-[1.02]' 
-                      : isCompleted
-                        ? isLight
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100'
-                          : 'bg-emerald-950/40 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-950/60'
-                        : isLight
-                          ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70 border border-transparent'
-                          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80 border border-transparent'
-                  }`}
-                  title={`${step.title}: ${step.subtitle}`}
-                  aria-label={`Workflow Step ${step.stepNumber}: ${step.title}`}
-                >
-                  {isCompleted ? (
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
-                  ) : (
-                    <StepIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : isLight ? 'text-slate-500' : 'text-slate-400'}`} />
-                  )}
-                  
-                  <span className="font-extrabold">{step.title}</span>
-                  
-                  {step.badge && (
-                    <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded hidden md:inline ${
-                      isActive 
-                        ? 'bg-white/20 text-white font-bold' 
-                        : isLight 
-                          ? 'bg-slate-200/80 text-slate-600' 
-                          : 'bg-slate-800 text-slate-400'
-                    }`}>
-                      {step.badge}
-                    </span>
-                  )}
-                </button>
-
-                {index < WORKFLOW_STEPS.length - 1 && (
-                  <div className={`w-3 sm:w-6 h-px shrink-0 hidden sm:block ${
-                    isCompleted 
-                      ? 'bg-emerald-400/50' 
-                      : isLight ? 'bg-slate-200' : 'bg-slate-800'
-                  }`} />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* 4. FULL RESPONSIVE MOBILE NAVIGATION DRAWER WITH STICKY BOTTOM CONVERSION DOCK */}
-      <AnimatePresence>
-        {isMobileDrawerOpen && (
-          <>
-            {/* Backdrop */}
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsMobileDrawerOpen(false)}
-              className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
-              aria-hidden="true"
-            />
-
-            {/* Slide-out Drawer Panel */}
-            <motion.div
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-              className={`fixed top-0 right-0 bottom-0 z-50 w-full max-w-sm flex flex-col border-l shadow-2xl overflow-hidden ${
-                isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0b0f19] border-slate-800 text-slate-100'
-              }`}
-            >
-              {/* Drawer Top Bar */}
-              <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-800 shrink-0">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 flex items-center justify-center font-black text-xs text-white">
-                    <svg className="w-4.5 h-4.5 fill-white" viewBox="0 0 24 24">
-                      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-black text-base text-slate-900 dark:text-white">
-                      RangeCraft
-                    </span>
-                    <span className="text-[10px] text-slate-600 dark:text-slate-300">
-                      Sequential FMCG Trade Engine
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setIsMobileDrawerOpen(false)}
-                  className="p-2 rounded-xl text-slate-400 hover:text-slate-700 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                  aria-label="Close Navigation Drawer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Drawer Scrollable Content */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-6">
-                
-                {/* 5-Step Sequential Workflow Section */}
-                <div>
-                  <div className="flex items-center justify-between mb-2.5">
-                    <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300">
-                      Sequential 5-Step Workflow
-                    </span>
-                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-400">
-                      Step {currentStepIndex !== -1 ? currentStepIndex + 1 : 1} of 5
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    {WORKFLOW_STEPS.map((step, idx) => {
-                      const isActive = step.tab === activeTab;
-                      const isCompleted = currentStepIndex !== -1 && idx < currentStepIndex;
-                      const StepIcon = step.icon;
-
-                      return (
+                    {!user && drawerTab === 'overview' ? (
+                      <div className="space-y-1.5">
                         <button
-                          key={step.id}
-                          onClick={() => handleStepClick(step.tab)}
-                          className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left font-bold text-xs transition-all cursor-pointer ${
-                            isActive
-                              ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                              : isCompleted
-                                ? isLight
-                                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                                  : 'bg-emerald-950/40 text-emerald-300 border border-emerald-800/50'
-                                : isLight
-                                  ? 'bg-slate-100 hover:bg-slate-200/80 text-slate-700'
-                                  : 'bg-slate-800/60 hover:bg-slate-800 text-slate-300'
+                          type="button"
+                          onClick={() => scrollToLandingSection('how-it-works')}
+                          className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-semibold transition-colors cursor-pointer ${
+                            isLight ? 'hover:bg-slate-50 text-slate-800' : 'hover:bg-slate-900 text-slate-200'
                           }`}
                         >
-                          <div className="flex items-center gap-2.5">
-                            {isCompleted ? (
-                              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                            ) : (
-                              <StepIcon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                            )}
-                            <div>
-                              <div>{step.title}</div>
-                              <div className={`text-[10px] font-normal ${isActive ? 'text-indigo-100' : 'text-slate-400'}`}>
-                                {step.subtitle}
-                              </div>
-                            </div>
-                          </div>
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
-                            isActive 
-                              ? 'bg-white/20 text-white' 
-                              : isLight ? 'bg-white text-slate-600 border border-slate-200' : 'bg-slate-900 text-slate-400'
-                          }`}>
-                            {step.badge}
-                          </span>
+                          <span>Retail Channels</span>
+                          <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
                         </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                {/* 4 Tool-Driven Suites Section */}
-                <div>
-                  <span className="text-xs font-black uppercase tracking-wider text-slate-600 dark:text-slate-300 block mb-2.5">
-                    Workspace Tool Suites
-                  </span>
-
-                  <div className="space-y-3">
-                    {TOOL_SUITES.map((suite) => {
-                      const isExpanded = mobileExpandedSuite === suite.id;
-                      const SuiteIcon = suite.icon;
-
-                      return (
-                        <div 
-                          key={suite.id} 
-                          className={`rounded-2xl border transition-colors overflow-hidden ${
-                            isLight ? 'bg-slate-50 border-slate-200' : 'bg-slate-900/60 border-slate-800'
+                        <button
+                          type="button"
+                          onClick={() => scrollToLandingSection('why-rangecraft')}
+                          className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-semibold transition-colors cursor-pointer ${
+                            isLight ? 'hover:bg-slate-50 text-slate-800' : 'hover:bg-slate-900 text-slate-200'
                           }`}
                         >
+                          <span>Why Not Excel</span>
+                          <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => scrollToLandingSection('roi-demonstrator-section')}
+                          className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-semibold transition-colors cursor-pointer ${
+                            isLight ? 'hover:bg-slate-50 text-slate-800' : 'hover:bg-slate-900 text-slate-200'
+                          }`}
+                        >
+                          <span>Profit Recovery &amp; Checker</span>
+                          <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => scrollToLandingSection('pricing-section')}
+                          className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-semibold transition-colors cursor-pointer ${
+                            isLight ? 'hover:bg-slate-50 text-slate-800' : 'hover:bg-slate-900 text-slate-200'
+                          }`}
+                        >
+                          <span>
+                            {hasActivePaidSubscription(user)
+                              ? 'Plans & Billing'
+                              : canClaimFreeTrial(user)
+                              ? 'Pricing & 14-Day Trial'
+                              : 'Commercial Plans'}
+                          </span>
+                          <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => scrollToLandingSection('faq-section')}
+                          className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-semibold transition-colors cursor-pointer ${
+                            isLight ? 'hover:bg-slate-50 text-slate-800' : 'hover:bg-slate-900 text-slate-200'
+                          }`}
+                        >
+                          <span>Commercial FAQs</span>
+                          <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
+                        </button>
+
+                        <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-1.5">
                           <button
-                            onClick={() => setMobileExpandedSuite(prev => prev === suite.id ? null : suite.id)}
-                            className="w-full flex items-center justify-between p-3 text-left font-bold text-xs cursor-pointer"
+                            type="button"
+                            onClick={() => navigateTo('dashboard')}
+                            className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-bold transition-colors cursor-pointer ${
+                              isLight ? 'bg-blue-50 text-blue-700' : 'bg-blue-950/60 text-blue-300'
+                            }`}
                           >
                             <div className="flex items-center gap-2">
-                              <SuiteIcon className="w-4 h-4 text-indigo-500" />
-                              <span className="text-slate-900 dark:text-slate-100 font-extrabold">{suite.title}</span>
+                              <LayoutGrid className="w-4 h-4" />
+                              <span>Open Executive Dashboard</span>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded bg-indigo-100 dark:bg-indigo-950 text-indigo-700 dark:text-indigo-300">
-                                {suite.badge}
-                              </span>
-                              <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
-                            </div>
+                            <ArrowRight className="w-4 h-4" />
                           </button>
 
-                          {isExpanded && (
-                            <div className="px-2 pb-2 space-y-1 border-t border-slate-200/60 dark:border-slate-800/60 pt-2">
-                              {suite.items.map((item) => {
-                                const isItemActive = activeTab === item.tab;
-                                const ItemIcon = item.icon;
+                          {onOpenAboutModal && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsMobileDrawerOpen(false);
+                                onOpenAboutModal();
+                              }}
+                              className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-semibold transition-colors cursor-pointer ${
+                                isLight ? 'hover:bg-slate-50 text-slate-700' : 'hover:bg-slate-900 text-slate-300'
+                              }`}
+                            >
+                              <div className="flex items-center gap-2">
+                                <HelpCircle className="w-4 h-4 text-slate-400" />
+                                <span>About RangeCraft AU</span>
+                              </div>
+                              <ArrowRight className="w-4 h-4 text-slate-400" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <button
+                          type="button"
+                          onClick={() => navigateTo('dashboard')}
+                          className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-bold cursor-pointer ${
+                            activeTab === 'dashboard'
+                              ? 'bg-[#2563EB] text-white'
+                              : isLight
+                              ? 'bg-slate-100 text-slate-800'
+                              : 'bg-slate-900 text-slate-200'
+                          }`}
+                        >
+                          <span>Executive Dashboard</span>
+                          <LayoutGrid className="w-4 h-4" />
+                        </button>
+                        {primaryLinks.slice(1).map((link) => (
+                          <button
+                            key={link.tab}
+                            type="button"
+                            onClick={() => navigateTo(link.tab)}
+                            className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left text-xs font-bold cursor-pointer ${
+                              activeTab === link.tab
+                                ? 'bg-indigo-600 text-white'
+                                : isLight
+                                ? 'hover:bg-slate-50 text-slate-700 border border-slate-200'
+                                : 'hover:bg-slate-900 text-slate-300 border border-slate-800'
+                            }`}
+                          >
+                            <span>{link.label}</span>
+                            <ArrowRight className="w-3.5 h-3.5 opacity-60" />
+                          </button>
+                        ))}
+                        <div className="pt-2 space-y-1.5">
+                          {TOOL_SUITES.flatMap(s => s.items).map((item) => {
+                            const ItemIcon = item.icon;
+                            return (
+                              <button
+                                key={item.name}
+                                type="button"
+                                onClick={() => navigateTo(item.tab)}
+                                className={`w-full min-h-[42px] flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold cursor-pointer ${
+                                  activeTab === item.tab
+                                    ? 'bg-indigo-50 text-indigo-700 font-bold'
+                                    : isLight
+                                    ? 'hover:bg-slate-50 text-slate-600'
+                                    : 'hover:bg-slate-900 text-slate-400'
+                                }`}
+                              >
+                                <ItemIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                <span className="truncate">{item.name}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
 
+                  {/* Drawer Footer CTA */}
+                  <div
+                    className={`p-4 border-t shrink-0 space-y-2.5 ${
+                      isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#090d16] border-slate-800'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileDrawerOpen(false);
+                        user ? navigateTo('billing') : onOpenAuthModal();
+                      }}
+                      className={`w-full min-h-[44px] py-2.5 px-4 rounded-xl border text-xs font-bold cursor-pointer ${
+                        isLight
+                          ? 'bg-white border-slate-300 text-slate-800 hover:bg-slate-100'
+                          : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
+                      }`}
+                    >
+                      {user ? 'Open My Account & Billing' : 'Sign In / Create Free Account'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMobileDrawerOpen(false);
+                        hasActivePaidSubscription(user) ? navigateTo('billing') : onOpenPricingModal();
+                      }}
+                      className="w-full min-h-[44px] py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm cursor-pointer"
+                    >
+                      <Zap className="w-4 h-4 text-amber-300" />
+                      <span>
+                        {hasActivePaidSubscription(user)
+                          ? 'Manage Billing & Plan'
+                          : canClaimFreeTrial(user)
+                          ? 'Start 14-Day Pro Trial'
+                          : 'Upgrade Plan'}
+                      </span>
+                      <ArrowRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </motion.div>
+            )}
+          </AnimatePresence>,
+          document.body
+        )
+      : null;
+
+  return (
+    <>
+      <header
+        ref={headerRef}
+        id="main-app-header"
+        className={`sticky top-0 z-40 border-b transition-colors duration-200 ${
+          isLight ? 'border-slate-200 text-slate-900' : 'border-slate-800 text-slate-100'
+        }`}
+      >
+        {/* Decorative blur surface placed on an isolated sibling layer so backdrop-filter never traps fixed descendants */}
+        <div
+          aria-hidden="true"
+          className={`absolute inset-0 -z-10 pointer-events-none backdrop-blur-md transition-colors duration-200 ${
+            isLight ? 'bg-white/95' : 'bg-[#0b0f19]/95'
+          }`}
+        />
+
+        {/* Main Clean 3-Zone Header Bar (Mobile keeps Logo, Account & Menu only) */}
+        <div className="max-w-7xl mx-auto px-3 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-14 sm:h-16 gap-2 sm:gap-3">
+            {/* LEFT: Single Clean Brand Mark */}
+            <div className="flex items-center min-w-0 shrink-0">
+              <button
+                id="header-brand-logo"
+                type="button"
+                onClick={() => navigateTo(user ? 'dashboard' : 'overview')}
+                className="cursor-pointer text-left focus:outline-none whitespace-nowrap shrink-0 min-h-[44px] flex items-center"
+                aria-label={user ? 'RangeCraft Dashboard' : 'RangeCraft Home'}
+              >
+                <span className="inline-flex items-center sm:hidden">
+                  <RangeCraftLogo size="sm" showSubtitle={false} />
+                </span>
+                <span className="hidden sm:inline-flex items-center">
+                  <RangeCraftLogo size="md" showSubtitle={false} />
+                </span>
+              </button>
+            </div>
+
+            {/* CENTER: Clean Landing Links vs Concise Workspace Nav */}
+            <nav className="hidden lg:flex items-center gap-1" aria-label="Primary Navigation">
+              {isPublicOverview && !user ? (
+                <>
+                  {[
+                    { label: 'How It Works', id: 'how-it-works' },
+                    { label: 'Why Not Excel', id: 'why-rangecraft' },
+                    { label: 'Profit Checker', id: 'roi-demonstrator-section' },
+                    { label: 'Pricing', id: 'pricing-section' },
+                  ].map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => scrollToLandingSection(item.id)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        isLight
+                          ? 'text-slate-600 hover:text-[#2563EB] hover:bg-slate-100'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => navigateTo('dashboard')}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      isLight
+                        ? 'text-slate-600 hover:text-[#2563EB] hover:bg-slate-100'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    Workspace
+                  </button>
+                </>
+              ) : (
+                primaryLinks.map((link) => {
+                  const isActive = activeTab === link.tab;
+                  return (
+                    <button
+                      key={link.tab}
+                      type="button"
+                      onClick={() => navigateTo(link.tab)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                        isActive
+                          ? 'bg-[#2563EB] text-white shadow-xs'
+                          : isLight
+                          ? 'text-slate-700 hover:text-[#2563EB] hover:bg-slate-100'
+                          : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                      }`}
+                    >
+                      {link.label}
+                    </button>
+                  );
+                })
+              )}
+
+              {/* More Tools Suites Dropdown */}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsCurrencyDropdownOpen(false);
+                    setIsSuitesDropdownOpen(prev => !prev);
+                  }}
+                  className={`flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    isSuitesDropdownOpen
+                      ? isLight
+                        ? 'bg-indigo-50 text-indigo-700'
+                        : 'bg-indigo-950 text-indigo-300'
+                      : isLight
+                      ? 'text-slate-700 hover:text-indigo-700 hover:bg-slate-100'
+                      : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  }`}
+                >
+                  <span>Tools</span>
+                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isSuitesDropdownOpen ? 'rotate-180' : ''}`} />
+                </button>
+
+                <AnimatePresence>
+                  {isSuitesDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                      transition={{ duration: 0.12 }}
+                      className={`absolute left-1/2 -translate-x-1/2 top-full mt-2 w-[620px] max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-5.5rem)] overflow-y-auto rounded-3xl border shadow-2xl p-4 z-50 grid grid-cols-2 gap-3 ${
+                        isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1424] border-slate-700 text-slate-100'
+                      }`}
+                    >
+                      {TOOL_SUITES.map((suite) => {
+                        const SuiteIcon = suite.icon;
+                        return (
+                          <div
+                            key={suite.id}
+                            className={`p-3 rounded-2xl border ${
+                              isLight ? 'bg-slate-50/70 border-slate-200/70' : 'bg-slate-900/60 border-slate-800'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between mb-2 px-1">
+                              <div className="flex items-center gap-1.5">
+                                <SuiteIcon className="w-3.5 h-3.5 text-indigo-600" />
+                                <span className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+                                  {suite.title}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-bold text-indigo-600">{suite.badge}</span>
+                            </div>
+                            <div className="space-y-1">
+                              {suite.items.map((item) => {
+                                const ItemIcon = item.icon;
+                                const isItemActive = activeTab === item.tab;
                                 return (
                                   <button
                                     key={item.name}
-                                    onClick={() => handleToolItemClick(item.tab)}
-                                    className={`w-full flex items-center justify-between p-2 rounded-xl text-left text-xs font-semibold cursor-pointer transition-colors ${
+                                    type="button"
+                                    onClick={() => navigateTo(item.tab)}
+                                    className={`w-full flex items-center gap-2.5 p-2 rounded-xl text-left transition-colors cursor-pointer ${
                                       isItemActive
-                                        ? 'bg-indigo-600 text-white font-bold'
+                                        ? 'bg-indigo-600 text-white'
                                         : isLight
-                                          ? 'hover:bg-white text-slate-700'
-                                          : 'hover:bg-slate-800 text-slate-300'
+                                        ? 'hover:bg-white text-slate-700'
+                                        : 'hover:bg-slate-800 text-slate-300'
                                     }`}
                                   >
-                                    <div className="flex items-center gap-2">
-                                      <ItemIcon className={`w-3.5 h-3.5 ${isItemActive ? 'text-white' : 'text-slate-400'}`} />
-                                      <span className="truncate">{item.name}</span>
+                                    <ItemIcon
+                                      className={`w-3.5 h-3.5 shrink-0 ${
+                                        isItemActive ? 'text-white' : 'text-indigo-500'
+                                      }`}
+                                    />
+                                    <div className="min-w-0 flex-1">
+                                      <div className="text-xs font-bold truncate">{item.name}</div>
                                     </div>
-                                    {item.badge && (
-                                      <span className={`text-[9px] px-1.5 py-0.2 rounded font-mono ${
-                                        isItemActive ? 'bg-white/20 text-white' : isLight ? 'bg-slate-200 text-slate-600' : 'bg-slate-800 text-slate-400'
-                                      }`}>
-                                        {item.badge}
-                                      </span>
-                                    )}
                                   </button>
                                 );
                               })}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-
+                          </div>
+                        );
+                      })}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
+            </nav>
 
-              {/* STICKY BOTTOM CONVERSION DOCK IN MOBILE DRAWER */}
-              <div className={`p-4 border-t shrink-0 ${
-                isLight ? 'bg-slate-50 border-slate-200' : 'bg-[#090d16] border-slate-800'
-              }`}>
-                <div className={`p-3 rounded-2xl border mb-3 ${
-                  isLight ? 'bg-white border-indigo-100 shadow-xs' : 'bg-slate-900 border-indigo-900/50'
-                }`}>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <div className="flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                      <span className="text-[11px] font-bold text-slate-900 dark:text-white">
-                        14-Day Pro Trial Active
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-extrabold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/80 px-2 py-0.5 rounded-full">
-                      12 Days Left
-                    </span>
-                  </div>
-                  <p className="text-[10px] text-slate-600 dark:text-slate-300">
-                    Unlock unlimited SKU imports, 52-week AI calendar generation & full executive JBP exports.
-                  </p>
-                </div>
-
+            {/* RIGHT: Account & Hamburger on mobile; full utilities from md upward */}
+            <div className="flex items-center gap-2 shrink-0">
+              {/* Currency Switcher (tablet & desktop; also inside mobile drawer) */}
+              <div className="relative hidden md:block">
                 <button
+                  id="header-currency-dropdown-btn"
+                  type="button"
                   onClick={() => {
-                    setIsMobileDrawerOpen(false);
-                    onOpenPricingModal();
+                    setIsSuitesDropdownOpen(false);
+                    setIsCurrencyDropdownOpen(prev => !prev);
                   }}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-700 hover:from-indigo-500 hover:to-blue-600 text-white font-black text-xs flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/30 cursor-pointer"
+                  className={`flex items-center gap-1 px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                    isLight
+                      ? 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
+                      : 'bg-slate-800 border-slate-700 hover:bg-slate-700 text-slate-200'
+                  }`}
+                  title="Switch Display Currency"
+                  aria-label={`Current Currency: ${currency}`}
                 >
-                  <Zap className="w-4 h-4 fill-amber-300 text-amber-300" />
-                  <span>Upgrade to Pro Plan</span>
-                  <ArrowRight className="w-3.5 h-3.5" />
+                  <span className="text-sm">{CURRENCY_CONFIGS[currency]?.flag || '🇦🇺'}</span>
+                  <span className="font-mono text-xs">{currency}</span>
+                  <ChevronDown className="w-3 h-3 text-slate-400" />
                 </button>
+
+                <AnimatePresence>
+                  {isCurrencyDropdownOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 4, scale: 0.98 }}
+                      transition={{ duration: 0.12 }}
+                      className={`absolute right-0 top-full mt-2 w-48 max-w-[calc(100vw-24px)] max-h-[70dvh] overflow-y-auto rounded-2xl border shadow-2xl p-2 z-50 ${
+                        isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-[#0f1424] border-slate-700 text-slate-100'
+                      }`}
+                    >
+                      <div className="px-2.5 py-1 mb-1 border-b border-slate-100 dark:border-slate-800 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Currency
+                      </div>
+                      <div className="space-y-0.5">
+                        {currencyOptions.map((opt) => (
+                          <button
+                            key={opt.code}
+                            type="button"
+                            onClick={() => {
+                              setCurrency(opt.code);
+                              setIsCurrencyDropdownOpen(false);
+                            }}
+                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                              currency === opt.code
+                                ? 'bg-indigo-50 text-indigo-700 font-bold'
+                                : isLight
+                                ? 'hover:bg-slate-100 text-slate-700'
+                                : 'hover:bg-slate-800 text-slate-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <span>{opt.flag}</span>
+                              <span>
+                                {opt.code} ({opt.symbol})
+                              </span>
+                            </div>
+                            {currency === opt.code && <Check className="w-3.5 h-3.5 text-indigo-600" />}
+                          </button>
+                        ))}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+              {/* Theme Toggle (tablet & desktop; also inside mobile drawer) */}
+              <button
+                id="header-theme-toggle-btn"
+                type="button"
+                onClick={() => onSelectTheme(currentTheme.includes('light') ? 'dark' : 'light')}
+                className={`p-2 rounded-xl border transition-colors cursor-pointer shrink-0 hidden md:inline-flex items-center justify-center ${
+                  isLight
+                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                    : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                }`}
+                title={isLight ? 'Switch to Dark Mode' : 'Switch to Light Mode'}
+                aria-label="Toggle Theme"
+              >
+                {isLight ? <Moon className="w-4 h-4 text-slate-700" /> : <Sun className="w-4 h-4 text-amber-400" />}
+              </button>
 
-    </header>
+              {/* Commercial Scenario Auto-Formulator Button */}
+              <button
+                id="header-ai-strategist-btn"
+                type="button"
+                onClick={onOpenAiOptimizer}
+                className={`p-2 rounded-xl border transition-colors cursor-pointer hidden md:flex items-center justify-center shrink-0 ${
+                  isLight
+                    ? 'bg-white border-slate-200 text-[#2563EB] hover:bg-blue-50'
+                    : 'bg-slate-800 border-slate-700 text-blue-300 hover:bg-blue-950/60'
+                }`}
+                title="Auto-Formulate 52-Week Schedule"
+                aria-label="Auto-Formulate 52-Week Schedule"
+              >
+                <Sparkles className="w-4 h-4" />
+              </button>
+
+              {/* Primary CTA: Manage Plan / Upgrade Plan / Start Free Trial */}
+              <button
+                id="header-primary-trial-cta"
+                type="button"
+                onClick={() => (hasActivePaidSubscription(user) ? setActiveTab('billing') : onOpenPricingModal())}
+                className="hidden md:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white font-semibold text-xs shadow-xs transition-colors cursor-pointer whitespace-nowrap shrink-0"
+              >
+                <Zap className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span>
+                  {hasActivePaidSubscription(user)
+                    ? 'Manage Plan'
+                    : canClaimFreeTrial(user)
+                    ? 'Start Free Trial'
+                    : 'Upgrade Plan'}
+                </span>
+              </button>
+
+              {/* User Account Menu (Always visible on mobile & desktop) */}
+              <UserAccountMenu
+                user={user}
+                userEmail={user?.email}
+                onOpenPricingModal={onOpenPricingModal}
+                onOpenInventoryManager={onOpenInventoryManager}
+                onOpenEditRange={onOpenEditRange}
+                onSelectTab={setActiveTab}
+                currentTheme={currentTheme}
+                onSignOut={onSignOut}
+                onOpenAuthModal={onOpenAuthModal}
+              />
+
+              {/* Mobile Drawer Trigger */}
+              <button
+                id="header-mobile-menu-toggle-btn"
+                type="button"
+                onClick={() => setIsMobileDrawerOpen(true)}
+                className={`min-h-[44px] min-w-[44px] flex items-center justify-center rounded-xl border lg:hidden transition-colors cursor-pointer shrink-0 ${
+                  isLight
+                    ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100'
+                    : 'bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700'
+                }`}
+                aria-label="Open Navigation Drawer"
+              >
+                <Menu className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Tablet & Desktop 5-Step Sequential Progress Bar */}
+        {showStepBar && (
+          <div
+            className={`hidden md:block border-t py-2 px-4 sm:px-6 lg:px-8 transition-colors ${
+              isLight ? 'bg-slate-50/80 border-slate-200' : 'bg-[#090d16]/80 border-slate-800'
+            }`}
+          >
+            <div className="max-w-7xl mx-auto flex items-center justify-between gap-1 overflow-x-auto no-scrollbar py-0.5">
+              {WORKFLOW_STEPS.map((step, index) => {
+                const isCompleted = currentStepIndex !== -1 && index < currentStepIndex;
+                const isActive = step.tab === activeTab;
+                const StepIcon = step.icon;
+
+                return (
+                  <React.Fragment key={step.id}>
+                    <button
+                      id={`header-nav-step-${step.stepNumber}`}
+                      type="button"
+                      onClick={() => navigateTo(step.tab)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-xl font-bold text-xs transition-all whitespace-nowrap cursor-pointer shrink-0 ${
+                        isActive
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : isCompleted
+                          ? isLight
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                            : 'bg-emerald-950/40 text-emerald-300 border border-emerald-500/30'
+                          : isLight
+                          ? 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                          : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/80'
+                      }`}
+                    >
+                      {isCompleted ? (
+                        <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                      ) : (
+                        <StepIcon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                      )}
+                      <span>{step.title}</span>
+                    </button>
+                    {index < WORKFLOW_STEPS.length - 1 && (
+                      <div className={`w-4 h-px shrink-0 ${isLight ? 'bg-slate-200' : 'bg-slate-800'}`} />
+                    )}
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </header>
+
+      {mobileDrawerPortal}
+    </>
   );
 };

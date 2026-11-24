@@ -2,6 +2,7 @@ import express, { Request, Response } from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
+import Stripe from "stripe";
 import dotenv from "dotenv";
 import { autoReslotAndFixClashes, generateDefault52WeekPlan } from "./src/utils/promoPlannerEngine";
 import { AUSTRALIAN_52_WEEKS } from "./src/data/calendarEvents";
@@ -145,11 +146,12 @@ app.post("/api/generate-strategy", async (req: Request, res: Response) => {
          - FMCG / Low-to-mid ticket consumables (< $35): Prefer "multi_buy" (e.g. "2 for $35") or "bogo" to drive transaction size while protecting unit economics.
          - Gifting periods (Mother's Day W19, Father's Day W36, Christmas W50): Use "bundle_gwp" or package deals.
          - Season changeover weeks: Use "clearance_markdown" (30-40% off).
-      4. ACCC 4-WEEK HIATUS RULE: Ensure a minimum 4-week gap between promotions of the same SKU to comply with Australian fair trading standards and prevent baseline cannibalization.
+      4. CUSTOM 4-WEEK HIATUS RULE: Ensure a minimum 4-week gap between promotions of the same SKU to satisfy custom scheduling rules and prevent baseline cannibalization.
       5. PROFIT PRIORITIZATION: Maintain a healthy gross margin floor (>= 30%). Inject vendor co-op scan funding for deep discounts if supplierCoOpEligible is true.
+      6. GENERIC CHANNEL LABELS ONLY: Use ONLY generic retail channel labels (e.g. National Supermarkets, Metro Grocery, Independent Grocers, Big-Box Retail, Online Marketplaces). Never name specific real-world retailers or government bodies; refer to spacing/pricing guardrails as Custom Scheduling Rules.
 
       INPUT PARAMETERS:
-      - Retailer Model: ${retailerModel || 'Supermarket & General Mass Merchant'}
+      - Retailer Model: ${retailerModel || 'National Supermarkets & General Mass Merchant'}
       - Primary Objective: ${strategicObjective || 'balanced_growth'}
       - Custom User Rules & Mandates: ${customConstraints || 'Ensure optimal distribution across all SKUs, high profit lift, and zero clashes.'}
 
@@ -222,7 +224,7 @@ app.post("/api/generate-strategy", async (req: Request, res: Response) => {
       const { repairedPromotions } = autoReslotAndFixClashes(rawAiPromos, products);
       
       return res.json({
-        rationale: aiResult.rationale || "AI strategy optimized across all 52 weeks with balanced SKU distribution, varied promotional mechanics, and strict ACCC hiatus compliance.",
+        rationale: aiResult.rationale || "Strategy optimized across all 52 weeks with balanced SKU distribution, varied promotional mechanics, and strict custom hiatus rule compliance.",
         promotions: repairedPromotions
       });
     }
@@ -230,7 +232,7 @@ app.post("/api/generate-strategy", async (req: Request, res: Response) => {
     // High-performance algorithmic fallback if AI model is unreachable
     const defaultPlan = generateDefault52WeekPlan(products);
     return res.json({
-      rationale: "Automated RangeCraft Optimization Engine synthesized an airtight 52-week promotional plan. All SKUs are fully distributed across the calendar with diversified promotional mechanics (percentage off, multi-buys, price drops, bundles, and seasonal markdowns), optimized gross profit margins, and zero ACCC hiatus clashes.",
+      rationale: "Automated RangeCraft Optimization Engine synthesized an airtight 52-week promotional plan. All SKUs are fully distributed across the calendar with diversified promotional mechanics (percentage off, multi-buys, price drops, bundles, and seasonal markdowns), optimized gross profit margins, and zero custom rule hiatus clashes.",
       promotions: defaultPlan
     });
 
@@ -379,12 +381,12 @@ Category: ${category || "General Merchandise"}
 Subcategory: ${subcategory || "All"}
 Current RRP: AUD $${currentRrp || 49.99}
 
-Provide Australian retail market intelligence covering:
-1. Major Australian Competitor Landscape (e.g. major national supermarkets, mass department stores, hardware chains, consumer electronics, and online marketplaces).
+Provide Australian retail market intelligence covering (using ONLY generic retail channel labels such as National Supermarkets, Metro Grocery, Specialty Retail, Online Marketplaces — never name specific real-world retailers or external regulatory bodies):
+1. Major Australian Competitor Channel Landscape (e.g. national supermarkets, mass department stores, hardware & trade channels, specialty retail, and online marketplaces).
 2. Benchmark Promotional Frequencies and Mechanics in Australia (% off, 1/2 price specials, Buy 1 Get 1, Multibuy, Cashbacks).
 3. Consumer Price Sensitivity & Current AU Economic Context.
 4. Recommended Promo Calendar Windows in Australia for this specific category.
-5. ACCC Pricing Compliance guidance.
+5. Custom Pricing & Hiatus Rule guidance (Custom Scheduling Rules).
 
 Respond ONLY with valid JSON conforming to this schema:
 {
@@ -573,11 +575,11 @@ app.post("/api/generate-briefing", async (req: Request, res: Response) => {
 
     const fallbackBriefing = {
       documentTitle: `Executive Commercial Strategy & 52-Week Retail Plan — ${targetYear}`,
-      executiveThesis: `The ${targetYear} commercial promotional calendar establishes an authoritative, disciplined promotional cadence across ${targetRetailer}. Grounded in ${strategicObjective}, the model projects AUD $${Math.round(totalRevenue).toLocaleString()} in promotional trade turnover, sustaining a healthy blended margin of ${Number(totalMargin).toFixed(1)}% while generating +${Math.round(kpis?.overallLiftPercent || 145)}% volume lift. Prepared by ${preparedBy}, all 52 promotional cycles adhere to Australian Consumer Law (ACL) and ACCC two-price comparison guidelines.`,
+      executiveThesis: `The ${targetYear} commercial promotional calendar establishes an authoritative, disciplined promotional cadence across ${targetRetailer}. Grounded in ${strategicObjective}, the model projects AUD $${Math.round(totalRevenue).toLocaleString()} in promotional trade turnover, sustaining a healthy blended margin of ${Number(totalMargin).toFixed(1)}% while generating +${Math.round(kpis?.overallLiftPercent || 145)}% volume lift. Prepared by ${preparedBy}, all 52 promotional cycles adhere to strict Custom Scheduling Rules and pricing integrity standards.`,
       keyObjectives: [
         `Deliver AUD $${Math.round(totalRevenue).toLocaleString()} in top-line promotional revenue at a strict ${Number(totalMargin).toFixed(1)}% blended margin floor.`,
         "Maximize seasonal campaign relevance across Australia Day, Easter, EOFY, Footy Finals, Black Friday, and Christmas.",
-        "Maintain 100% ACCC compliance with mandatory 4-week regular price hiatus between feature cycles.",
+        "Maintain 100% Custom Rules compliance with mandatory 4-week regular price hiatus between feature cycles.",
         `Secure AUD $${Math.round(kpis?.totalTradeSpendFundingAud || kpis?.totalTradeSpendCoOpAud || 185000).toLocaleString()} in supplier co-op trade vendor rebate funding across catalogue front covers and major in-store endcaps.`
       ],
       quarterlyRoadmap: [
@@ -613,7 +615,7 @@ app.post("/api/generate-briefing", async (req: Request, res: Response) => {
         { channel: "Retail Loyalty App & Push Notifications", frequency: "Dynamic real-time triggers", role: "Personalized basket upsell and loyalty retention" },
         { channel: "Click & Collect / Online Banners", frequency: "Continuous synchronous hero spotlight", role: "Digital conversion and average order value enhancement" }
       ],
-      governanceAndCompliance: "ACCC Guidelines for Two-Price and Was/Now Comparisons are strictly enforced with automated 4-week regular price hiatus buffers between promotions to protect promotional credibility.",
+      governanceAndCompliance: "Custom Scheduling Rules and pricing integrity standards are strictly enforced with automated 4-week regular price hiatus buffers between promotions to protect promotional credibility.",
       categoryRecommendations: [
         "Protect hero SKUs from frequent shallow discounts to preserve brand equity and price integrity.",
         "Prioritize high-lift multi-buys (e.g., Buy 2 Save 20%) on staple consumable SKUs to increase customer basket weight.",
@@ -626,7 +628,8 @@ app.post("/api/generate-briefing", async (req: Request, res: Response) => {
       : (calendarSummary || '52-week calendar distributed across 4 quarters.');
 
     const prompt = `
-You are a Chief Merchandising Officer and Senior Retail Commercial Strategist specializing in the Australian retail market (covering major supermarket, pharmacy, mass merchant, and home improvement chains).
+You are a Chief Merchandising Officer and Senior Retail Commercial Strategist specializing in the Australian retail market (covering national supermarket, pharmacy, mass merchant, and home improvement channels).
+IMPORTANT: Use ONLY generic retail channel labels (never name specific real-world retailers or external government bodies; refer to hiatus/pricing rules as Custom Scheduling Rules).
 
 Generate a comprehensive, executive-ready Commercial Strategy Briefing for ${targetYear}.
 Context:
@@ -663,7 +666,7 @@ Respond ONLY with a valid JSON object matching this exact schema:
     { "channel": "Retail Loyalty App & Push Notifications", "frequency": "string", "role": "string" },
     { "channel": "E-Commerce & Digital Media", "frequency": "string", "role": "string" }
   ],
-  "governanceAndCompliance": "string (ACCC compliance, price hiatus rules, and two-price integrity governance)",
+  "governanceAndCompliance": "string (Custom scheduling rules, price hiatus rules, and two-price integrity governance)",
   "categoryRecommendations": [
     "string",
     "string",
@@ -683,7 +686,7 @@ Respond ONLY with a valid JSON object matching this exact schema:
     return res.json({
       documentTitle: "Annual Retail Promotional Commercial Strategy — Australian Market",
       executiveThesis: "Comprehensive commercial overview outlining 52-week promotional roadmap.",
-      keyObjectives: ["Deliver revenue target", "Maintain ACCC compliance"],
+      keyObjectives: ["Deliver revenue target", "Maintain Custom Rules compliance"],
       quarterlyRoadmap: [],
       tradeFundingStrategy: "Target 12-15% supplier co-op funding.",
       omniChannelDirectives: []
@@ -696,15 +699,13 @@ Respond ONLY with a valid JSON object matching this exact schema:
 // -------------------------------------------------------------
 
 // Lazy Stripe Client Initializer
-let stripeClient: any = null;
-function getStripe(): any {
+let stripeClient: Stripe | null = null;
+function getStripe(): Stripe | null {
   if (!stripeClient) {
     const secretKey = process.env.STRIPE_SECRET_KEY;
     if (secretKey) {
       try {
-        const Stripe = require("stripe");
         stripeClient = new Stripe(secretKey, {
-          apiVersion: "2023-10-16",
           appInfo: {
             name: "RangeCraft Australia PromoStrat",
             version: "2.4.0",
@@ -734,7 +735,7 @@ app.get("/api/stripe/config", (req: Request, res: Response) => {
     abn: "45 809 237 194",
     acn: "648 912 340",
     gstRatePercent: 10,
-    supportedMethods: ["card", "apple_pay", "google_pay", "link"],
+    supportedMethods: ["card", "link"],
   });
 });
 
@@ -759,21 +760,30 @@ app.post("/api/stripe/create-checkout-session", async (req: Request, res: Respon
     const stripe = getStripe();
 
     if (stripe) {
-      const isSubscription = planType === "pro_subscription" || planType === "enterprise_subscription" || planType === "subscription_monthly" || planType === "subscription_annual";
+      const isSubscription =
+        planType === "starter_subscription" ||
+        planType === "pro_subscription" ||
+        planType === "enterprise_subscription" ||
+        planType === "subscription_monthly" ||
+        planType === "subscription_annual";
       const isAnnual = billingCycle === "annual" || planType === "subscription_annual";
       
       let unitAmountInCents = Math.round(Number(priceAud) * 100);
       if (unitAmountInCents <= 0) unitAmountInCents = 1900; // default $19 AUD
 
-      let productDescription = "Single unredacted commercial export package (XLSX / PDF) with full ACCC compliance guarantee.";
-      if (planType === "pro_subscription" || planType === "subscription_monthly") {
-        productDescription = "Commercial Pro Unlimited — 52-week calendar, SKU deletion audits, unlimited PDF/XLSX exports & AI strategy generation.";
+      let productDescription = "Single unredacted commercial export package (XLSX / PDF) with full Custom Rules compliance guarantee.";
+      if (planType === "starter_subscription") {
+        productDescription = "Starter Plan (inc. GST) — 52-week calendar, margin simulator, custom scheduling rules & PDF export.";
+      } else if (planType === "pro_subscription" || planType === "subscription_monthly") {
+        productDescription = "Growth Plan (inc. GST) — 52-week calendar, trade spend modelling, unlimited JBP exports & Commercial Insights.";
       } else if (planType === "enterprise_subscription") {
-        productDescription = "Enterprise Portfolio Tier — Multi-user collaboration, unlimited catalogs, ERP sync & dedicated category advisory.";
+        productDescription = "Enterprise Portfolio Tier (inc. GST) — Multi-user collaboration, unlimited catalogs & dedicated commercial SLA.";
       } else if (planType === "subscription_annual") {
-        productDescription = "Commercial Pro Annual Access — Full 12-month license with 20% annual discount included.";
+        productDescription = "Commercial Annual Access (inc. GST) — Full 12-month license with 2 months free included.";
+      } else if (planType === "ai_topup") {
+        productDescription = "Scenario Simulation Top-Up (+50 Runs, inc. GST) — Non-expiring scenario planning credits.";
       } else if (itemName.toLowerCase().includes("advisory") || itemName.toLowerCase().includes("jbp")) {
-        productDescription = "Executive Strategy & Category Advisory Deliverable by Senior FMCG Strategists.";
+        productDescription = "Executive Strategy & Category Advisory Deliverable by Senior FMCG Strategists (inc. GST).";
       }
 
       const session = await stripe.checkout.sessions.create({
@@ -788,7 +798,6 @@ app.post("/api/stripe/create-checkout-session", async (req: Request, res: Respon
               product_data: {
                 name: itemName,
                 description: productDescription,
-                images: ["https://images.unsplash.com/photo-1551288049-bebda4e38f71?auto=format&fit=crop&w=600&q=80"],
                 metadata: {
                   exportId,
                   planType,
@@ -858,7 +867,7 @@ app.get("/api/stripe/verify-session", async (req: Request, res: Response) => {
       const planType = session.metadata?.planType || "single_export";
       const exportId = session.metadata?.exportId || "export";
       const amountTotal = (session.amount_total || 1900) / 100;
-      const gstAmount = Number((amountTotal * 0.1).toFixed(2));
+      const gstAmount = Number((amountTotal / 11).toFixed(2));
       const invoiceNumber = `INV-AU-${session.id.slice(-8).toUpperCase()}`;
 
       return res.json({
@@ -890,7 +899,7 @@ app.get("/api/stripe/verify-session", async (req: Request, res: Response) => {
       exportId: (req.query.export_unlocked as string) || "export",
       itemName: "RangeCraft Commercial Deliverable",
       amountPaidAud: 19.0,
-      gstAmountAud: 1.9,
+      gstAmountAud: 1.73,
       invoiceNumber: invoiceNum,
       mode: "sandbox",
       timestamp: new Date().toISOString(),
@@ -916,7 +925,7 @@ app.post("/api/stripe/direct-payment", async (req: Request, res: Response) => {
     } = req.body;
 
     const amountNum = Number(priceAud) || 19;
-    const gstAmount = Number((amountNum * 0.1).toFixed(2));
+    const gstAmount = Number((amountNum / 11).toFixed(2));
     const txId = `txn_au_${Date.now()}_${Math.floor(1000 + Math.random() * 9000)}`;
     const invoiceId = `INV-2026-${Math.floor(10000 + Math.random() * 90000)}`;
 
@@ -946,11 +955,67 @@ app.post("/api/stripe/direct-payment", async (req: Request, res: Response) => {
   }
 });
 
-// 5. Official Australian Tax Invoice Generator Endpoint
+// 5. Express Checkout (PayPal Subscribe / Express)
+app.post("/api/checkout/express", async (req: Request, res: Response) => {
+  try {
+    const {
+      exportId = "pro_planner",
+      itemName = "Commercial Pro Subscription",
+      priceAud = 149,
+      planType = "pro_subscription",
+      billingCycle = "monthly",
+      paymentMethod = "paypal",
+      customerEmail = "buyer@retailbrands.com.au",
+      customerName = "Australian Category Lead",
+      companyName = "",
+      abn = "",
+      country = "Australia",
+    } = req.body;
+
+    const amountNum = Number(priceAud) || 19;
+    const gstAmount = Number((amountNum / 11).toFixed(2));
+    const subtotalAud = Number((amountNum - gstAmount).toFixed(2));
+
+    const prefix = "PP-AU";
+    const transactionId = `${prefix}-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const invoiceId = `INV-AU-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
+
+    return res.json({
+      success: true,
+      mode: "sandbox",
+      transactionId,
+      invoiceId,
+      paymentMethod,
+      exportId,
+      itemName,
+      planType,
+      billingCycle,
+      amountPaidAud: amountNum,
+      subtotalAud,
+      gstAmountAud: gstAmount,
+      customerName,
+      customerEmail,
+      companyName,
+      buyerAbn: abn || "Not Stated",
+      country,
+      issuer: {
+        company: "RangeCraft AU Pty Ltd",
+        abn: "45 809 237 194",
+        acn: "648 912 340",
+      },
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error("Express checkout error:", error);
+    return res.status(500).json({ error: error?.message || "Express checkout authorization failed" });
+  }
+});
+
+// 6. Official Australian Tax Invoice Generator Endpoint
 app.get("/api/stripe/tax-invoice/:invoiceId", (req: Request, res: Response) => {
   const { invoiceId } = req.params;
   const amount = Number(req.query.amount) || 39.0;
-  const gst = Number((amount * 0.1).toFixed(2));
+  const gst = Number((amount / 11).toFixed(2));
   const subtotal = Number((amount - gst).toFixed(2));
 
   res.json({
