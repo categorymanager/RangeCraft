@@ -20,7 +20,8 @@ import {
   Wallet,
   X,
   Zap,
-  AlertTriangle
+  AlertTriangle,
+  ScanBarcode,
 } from 'lucide-react';
 import { AppTab, CheckoutPlanType, StrategyKPIs, ThemeMode, UserProfile } from '../types';
 import { SEOHead } from './SEOHead';
@@ -31,6 +32,7 @@ import { canClaimFreeTrial, hasActivePaidSubscription } from '../utils/entitleme
 
 import supermarketProduceImg from '../assets/images/supermarket_produce_aisle_1795331011651.jpg';
 import warehousePalletImg from '../assets/images/warehouse_pallet_dispatch_1795331011441.jpg';
+import heroRetailShowcaseImg from '../assets/images/hero_retail_showcase_1795833146177.jpg';
 
 interface LandingPageViewProps {
   kpis: StrategyKPIs;
@@ -226,8 +228,8 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
       metricSubtitle:
         'Evaluate supplier co-funded deals, carton volume discounts, and store breakeven thresholds side by side.',
       metricValue: '34.8% Store GM',
-      image: supermarketProduceImg,
-      imageAlt: 'Grocery promotional shelf display',
+      image: heroRetailShowcaseImg,
+      imageAlt: 'Grocery promotional shelf display and store buyer showcase',
       cards: [
         {
           icon: ShoppingCart,
@@ -400,7 +402,7 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 type="button"
                 id="hero-secondary-sandbox-cta"
                 onClick={() => scrollToSection('roi-demonstrator-section')}
-                className={`px-6 py-3.5 rounded-xl border font-semibold text-sm transition-colors inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                className={`px-5 py-3.5 rounded-xl border font-semibold text-sm transition-colors inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
                   isLight
                     ? 'bg-white border-[#E2E8F0] text-[#0F172A] hover:bg-slate-50'
                     : 'bg-slate-900 border-slate-700 text-slate-200 hover:bg-slate-800'
@@ -408,6 +410,20 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
               >
                 <Play className="w-3.5 h-3.5 text-[#2563EB]" />
                 <span>Watch 2 Minute Demo</span>
+              </button>
+
+              <button
+                type="button"
+                id="hero-scan-order-cta"
+                onClick={() => onNavigateTab('scan-order')}
+                className={`px-4 py-3.5 rounded-xl border font-semibold text-sm transition-colors inline-flex items-center justify-center gap-2 cursor-pointer whitespace-nowrap ${
+                  isLight
+                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                    : 'bg-emerald-950/40 border-emerald-800 text-emerald-300 hover:bg-emerald-900/50'
+                }`}
+              >
+                <ScanBarcode className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span>Store Scan &amp; PO</span>
               </button>
             </div>
 
@@ -605,6 +621,62 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({
                 <p className={`text-[11px] mt-0.5 ${subText}`}>{ch.tag}</p>
               </div>
             ))}
+          </div>
+
+          {/* Editorial Visual Showcase Strip */}
+          <div
+            className={`mt-8 rounded-2xl border overflow-hidden grid grid-cols-1 lg:grid-cols-12 items-stretch ${cardBg}`}
+          >
+            <div className="lg:col-span-5 relative min-h-[200px] sm:min-h-[240px] bg-slate-900 overflow-hidden">
+              <img
+                src={heroRetailShowcaseImg}
+                alt="Vibrant Australian retail grocery category showcase and promotional display"
+                className="w-full h-full object-cover"
+                referrerPolicy="no-referrer"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-slate-950/20 to-transparent" />
+              <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between gap-2 text-white">
+                <span className="px-2.5 py-1 rounded-md bg-emerald-500/90 text-[11px] font-bold uppercase tracking-wider">
+                  Live Store &amp; Head Office Sync
+                </span>
+                <span className="text-xs font-mono font-semibold text-slate-100">AUD inc. GST</span>
+              </div>
+            </div>
+            <div className="lg:col-span-7 p-6 sm:p-8 flex flex-col justify-between gap-4">
+              <div className="space-y-2">
+                <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-600 dark:text-emerald-400">
+                  RANGE-TO-SHELF EXECUTION
+                </p>
+                <h3 className={`text-xl sm:text-2xl font-bold tracking-tight ${headingText}`}>
+                  From Head-Office 52-Week Strategy to Store-Floor Barcode Ordering
+                </h3>
+                <p className={`text-sm leading-relaxed ${subText}`}>
+                  Upload your product range once to unlock custom promotional scheduling, $ or % case deal margin modeling, and live mobile aisle scanning that auto-splits supplier Purchase Orders.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('catalog')}
+                  className="min-h-[44px] px-5 py-2.5 rounded-xl bg-[#2563EB] hover:bg-[#1D4ED8] text-white text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <span>Upload Range First</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('scan-order')}
+                  className={`min-h-[44px] px-5 py-2.5 rounded-xl border text-xs font-bold inline-flex items-center gap-2 transition-colors cursor-pointer whitespace-nowrap ${
+                    isLight
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                      : 'bg-emerald-950/40 border-emerald-800 text-emerald-300 hover:bg-emerald-900/50'
+                  }`}
+                >
+                  <ScanBarcode className="w-4 h-4" />
+                  <span>Launch Store Scan &amp; PO Builder</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       </section>

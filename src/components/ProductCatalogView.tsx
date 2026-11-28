@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { AppTab, Product, PerformanceTier, ThemeMode, WeekPromotion, SkuCatalog, UserProfile } from '../types';
+import { AppTab, Product, PerformanceTier, ThemeMode, WeekPromotion, SkuCatalog, UserProfile, CaseDealType } from '../types';
 import { 
   exportProductsToCsv, 
   generateProductCsvTemplate, 
@@ -222,6 +222,11 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
   const [newStockLevel, setNewStockLevel] = useState('');
   const [newCoOpEligible, setNewCoOpEligible] = useState(true);
   const [newTags, setNewTags] = useState('Australia Day, Hero, Volume');
+  const [newSupplierBrand, setNewSupplierBrand] = useState('');
+  const [newVariantGroup, setNewVariantGroup] = useState('');
+  const [newUnitsPerCarton, setNewUnitsPerCarton] = useState('12');
+  const [newDefaultCaseDealType, setNewDefaultCaseDealType] = useState<CaseDealType>('none');
+  const [newDefaultCaseDealValue, setNewDefaultCaseDealValue] = useState('');
 
   // Active Catalog Object
   const currentCatalog = useMemo(() => {
@@ -897,11 +902,19 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
     const margin = Number((((rrpNum - costNum) / rrpNum) * 100).toFixed(1));
     const parsedStock = normalizeOptionalStock(newStockLevel);
 
+    const parsedCaseDealVal = parseFloat(newDefaultCaseDealValue) || 0;
+    const parsedCartonUnits = Math.max(1, parseInt(newUnitsPerCarton) || 12);
+
     const product: Product = {
       sku: newSku || `SKU-CUST-${Date.now().toString().slice(-4)}`,
       name: newName || 'New Product Range Item',
       category: newCategory,
       subcategory: newSubcategory,
+      supplierBrand: newSupplierBrand.trim() || undefined,
+      variantGroup: newVariantGroup.trim() || undefined,
+      unitsPerCarton: parsedCartonUnits,
+      defaultCaseDealType: newDefaultCaseDealType,
+      defaultCaseDealValue: newDefaultCaseDealType === 'none' ? 0 : parsedCaseDealVal,
       rrp: rrpNum,
       cost: costNum,
       marginPercent: margin,
@@ -919,6 +932,10 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
     setNewStockLevel('');
     setNewSku('');
     setNewName('');
+    setNewSupplierBrand('');
+    setNewVariantGroup('');
+    setNewDefaultCaseDealType('none');
+    setNewDefaultCaseDealValue('');
     setIsAddModalOpen(false);
     showToast(`Added SKU ${product.sku} to range.`);
   };
@@ -3126,6 +3143,69 @@ export const ProductCatalogView: React.FC<ProductCatalogViewProps> = ({
                     <option value="tier3_niche">Tier 3: Niche / Premium</option>
                     <option value="tier4_clearance">Tier 4: Clearance</option>
                   </select>
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Supplier / Brand (Optional Clash Guard)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Byron Roast Co."
+                    value={newSupplierBrand}
+                    onChange={(e) => setNewSupplierBrand(e.target.value)}
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Variant Group (Optional)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Sparkling 1L Range"
+                    value={newVariantGroup}
+                    onChange={(e) => setNewVariantGroup(e.target.value)}
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Promo Case Deal ($ or % Cost Reduction)</label>
+                  <select
+                    value={newDefaultCaseDealType}
+                    onChange={(e) => setNewDefaultCaseDealType(e.target.value as CaseDealType)}
+                    className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 cursor-pointer"
+                  >
+                    <option value="none">No Case Deal</option>
+                    <option value="percent_off_cost">% Off Unit Cost</option>
+                    <option value="dollar_off_unit">$ Off Per Unit</option>
+                    <option value="dollar_off_case">$ Off Per Carton / Case</option>
+                  </select>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Deal Value</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      disabled={newDefaultCaseDealType === 'none'}
+                      placeholder={newDefaultCaseDealType === 'percent_off_cost' ? 'e.g. 12%' : 'e.g. 3.60'}
+                      value={newDefaultCaseDealValue}
+                      onChange={(e) => setNewDefaultCaseDealValue(e.target.value)}
+                      className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-mono disabled:opacity-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block font-semibold text-slate-700 dark:text-slate-300 mb-1">Units / Case</label>
+                    <input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={newUnitsPerCarton}
+                      onChange={(e) => setNewUnitsPerCarton(e.target.value)}
+                      className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-slate-900 dark:text-white font-mono"
+                    />
+                  </div>
                 </div>
               </div>
 

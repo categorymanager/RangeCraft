@@ -356,7 +356,7 @@ export const PricingPaywallModal: React.FC<PricingPaywallModalProps> = ({
                             ? 'Current Active Plan'
                             : trialEligible
                             ? plan.ctaText
-                            : 'Upgrade to Pro Plan'}
+                            : 'Upgrade to Growth Plan'}
                         </button>
                       </div>
                     );

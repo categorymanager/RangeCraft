@@ -26,6 +26,7 @@ import {
 } from 'lucide-react';
 import { UserProfile, CrmAccount, CrmDeal, WeekPromotion, ThemeMode, CheckoutPlanType } from '../types';
 import { formatAud } from '../utils/formatters';
+import { trackSubscriptionUpgrade } from '../utils/analytics';
 
 interface BillingInvoicesHubProps {
   user: UserProfile | null;
@@ -122,7 +123,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
       id: 'INV-2026-001',
       date: '2026-07-16',
       dueDate: '2026-07-16',
-      itemDescription: 'Commercial Pro Subscription - Trial Conversion (Annual)',
+      itemDescription: 'Growth Plan Subscription - Trial Conversion (Annual)',
       amountAud: 1430,
       paymentMethod: 'credit_card',
       status: 'Paid',
@@ -245,7 +246,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
         payTarget === 'starter_plan'
           ? 'Starter Plan'
           : payTarget === 'pro_planner'
-          ? 'Pro Plan'
+          ? 'Growth Plan'
           : 'Enterprise Portfolio';
       const calculatedCost = payTarget === 'starter_plan' ? 59 : payTarget === 'pro_planner' ? 149 : 450;
 
@@ -271,6 +272,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
         paymentGatewaySelected === 'credit_card' ? 'credit_card' : 'paypal',
         simulatedPaypalId
       );
+      trackSubscriptionUpgrade(targetPlan, calculatedCost, payTarget);
 
       const isEnterprise = payTarget === 'enterprise_tier';
       const isStarter = payTarget === 'starter_plan';
@@ -403,7 +405,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     {user?.subscriptionTier === 'enterprise_tier'
                       ? 'Enterprise Portfolio'
                       : user?.subscriptionTier === 'pro_planner'
-                      ? 'Pro Plan ($149/mo)'
+                      ? 'Growth Plan ($149/mo)'
                       : user?.subscriptionTier === 'starter_plan'
                       ? 'Starter Plan ($59/mo)'
                       : 'Free Forever ($0)'}
@@ -524,7 +526,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       if (onStartCheckout) {
                         onStartCheckout({
                           exportId: 'pro_planner',
-                          itemName: 'Pro Plan (A$149/mo inc. GST)',
+                          itemName: 'Growth Plan (A$149/mo inc. GST)',
                           priceAud: 149,
                           planType: 'pro_subscription',
                           billingCycle: 'monthly',
@@ -538,7 +540,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-black text-xs shadow-md shadow-indigo-500/20 transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0"
                   >
                     <Zap className="w-4 h-4 text-amber-300" />
-                    <span>Upgrade to Pro Plan ($149/mo inc. GST)</span>
+                    <span>Upgrade to Growth Plan ($149/mo inc. GST)</span>
                   </button>
                 )}
 
@@ -654,8 +656,8 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
               isLight ? 'bg-white border-slate-200 text-slate-900' : 'bg-slate-900/60 border-slate-800 text-slate-100'
             }`}>
               <div>
-                <h3 className="font-black text-sm uppercase tracking-wider text-slate-400">Trade Invoice Builder</h3>
-                <p className="text-[11px] text-slate-400 mt-0.5">Quickly draft catalog co-op scan rebate invoices to supermarkets.</p>
+                <h3 className={`font-black text-sm uppercase tracking-wider ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>Trade Invoice Builder</h3>
+                <p className={`text-[11px] mt-0.5 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Quickly draft catalog co-op scan rebate invoices to retailers.</p>
               </div>
 
               {/* Select Client Retailer */}
@@ -668,7 +670,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     const acc = accounts.find(a => a.id === e.target.value);
                     if (acc) setTradeTerms(acc.creditTerms);
                   }}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                  }`}
                 >
                   {accounts.map(acc => (
                     <option key={acc.id} value={acc.id}>{acc.name} ({acc.companyType})</option>
@@ -682,7 +686,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                 <select
                   value={selectedDeal}
                   onChange={(e) => handleDealSelect(e.target.value)}
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                  }`}
                 >
                   <option value="custom">-- Custom Trade Invoice (Unlinked) --</option>
                   {deals.map(deal => (
@@ -700,7 +706,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     value={tradeSku}
                     onChange={(e) => setTradeSku(e.target.value)}
                     required
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                    }`}
                     placeholder="e.g. SKU-FMC-001"
                   />
                 </div>
@@ -713,7 +721,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     value={tradeWeek}
                     onChange={(e) => setTradeWeek(parseInt(e.target.value) || 1)}
                     required
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                    }`}
                   />
                 </div>
               </div>
@@ -725,8 +735,10 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                   value={tradeCampaignName}
                   onChange={(e) => setTradeCampaignName(e.target.value)}
                   required
-                  className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
-                  placeholder="e.g. Easter Catalogue Display Display Rebate"
+                  className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                    isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                  }`}
+                  placeholder="e.g. Easter Catalogue Display Rebate"
                 />
               </div>
 
@@ -738,7 +750,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     value={tradeAmount}
                     onChange={(e) => setTradeAmount(parseFloat(e.target.value) || 0)}
                     required
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none font-mono"
+                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none font-mono ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                    }`}
                   />
                 </div>
                 <div>
@@ -748,15 +762,19 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     value={tradeTerms}
                     onChange={(e) => setTradeTerms(e.target.value)}
                     required
-                    className="w-full p-2.5 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white focus:outline-none"
+                    className={`w-full p-2.5 rounded-xl border text-xs focus:outline-none ${
+                      isLight ? 'bg-slate-50 border-slate-300 text-slate-900' : 'bg-slate-950 border-slate-800 text-white'
+                    }`}
                     placeholder="e.g. Net 45 Days"
                   />
                 </div>
               </div>
 
               {/* EFT payout account */}
-              <div className="p-3 rounded-xl bg-slate-950/70 border border-slate-800 space-y-2">
-                <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">EFT Remittance instructions</div>
+              <div className={`p-3 rounded-xl border space-y-2 ${
+                isLight ? 'bg-slate-50 border-slate-200 text-slate-900' : 'bg-slate-950/70 border-slate-800 text-white'
+              }`}>
+                <div className={`text-[10px] font-bold uppercase tracking-wider ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>EFT Remittance instructions</div>
                 <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
                   <div>
                     <label className="text-[9px] text-slate-500 block">Bank BSB</label>
@@ -764,7 +782,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       type="text"
                       value={tradeBsb}
                       onChange={(e) => setTradeBsb(e.target.value)}
-                      className="w-full bg-transparent border-b border-slate-800 text-white focus:outline-none"
+                      className={`w-full bg-transparent border-b focus:outline-none ${
+                        isLight ? 'border-slate-300 text-slate-900' : 'border-slate-800 text-white'
+                      }`}
                     />
                   </div>
                   <div>
@@ -773,7 +793,9 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                       type="text"
                       value={tradeAccountNum}
                       onChange={(e) => setTradeAccountNum(e.target.value)}
-                      className="w-full bg-transparent border-b border-slate-800 text-white focus:outline-none"
+                      className={`w-full bg-transparent border-b focus:outline-none ${
+                        isLight ? 'border-slate-300 text-slate-900' : 'border-slate-800 text-white'
+                      }`}
                     />
                   </div>
                 </div>
@@ -796,10 +818,12 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
             }`}>
               <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="font-black text-sm text-white">Supermarket & Distributor Trade Invoices</h3>
-                  <p className="text-[11px] text-slate-400">Remit co-op funds, display rebate bookings, and claim trade allowances.</p>
+                  <h3 className={`font-black text-sm ${isLight ? 'text-slate-900' : 'text-white'}`}>Retail &amp; Distributor Trade Invoices</h3>
+                  <p className={`text-[11px] ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>Remit co-op funds, display rebate bookings, and claim trade allowances.</p>
                 </div>
-                <span className="text-xs font-mono bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-xl border border-emerald-500/20 font-bold">
+                <span className={`text-xs font-mono px-2.5 py-1 rounded-xl border font-bold ${
+                  isLight ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                }`}>
                   {tradeInvoices.length} Claims Outbound
                 </span>
               </div>
@@ -808,11 +832,17 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                 {tradeInvoices.map((inv) => (
                   <div
                     key={inv.id}
-                    className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs hover:border-slate-700 transition-colors"
+                    className={`p-4 rounded-2xl border flex flex-col sm:flex-row sm:items-center justify-between gap-4 text-xs transition-colors ${
+                      isLight
+                        ? 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                        : 'bg-slate-950 border-slate-800 hover:border-slate-700'
+                    }`}
                   >
                     <div className="flex items-start gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 shrink-0">
-                        <Building2 className="w-5 h-5 text-emerald-400" />
+                      <div className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                        isLight ? 'bg-white border-slate-200 text-emerald-600' : 'bg-slate-900 border-slate-800 text-slate-400'
+                      }`}>
+                        <Building2 className={`w-5 h-5 ${isLight ? 'text-emerald-600' : 'text-emerald-400'}`} />
                       </div>
                       <div className="space-y-0.5">
                         <div className="flex items-center gap-2">
@@ -825,17 +855,19 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                             {inv.status}
                           </span>
                         </div>
-                        <p className="font-bold text-slate-200 text-[11px] line-clamp-1">{inv.clientName}</p>
-                        <p className="text-xs text-slate-400">{inv.campaignName} (SKU: {inv.skuCode}, W{inv.campaignWeek})</p>
+                        <p className={`font-bold text-[11px] line-clamp-1 ${isLight ? 'text-slate-800' : 'text-slate-200'}`}>{inv.clientName}</p>
+                        <p className={`text-xs ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>{inv.campaignName} (SKU: {inv.skuCode}, W{inv.campaignWeek})</p>
                         <div className="text-[10px] text-slate-500 font-mono">
                           Claimed: {inv.dateCreated} • Terms: {inv.paymentTerms}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-800">
+                    <div className={`flex items-center justify-between sm:justify-end gap-4 border-t sm:border-t-0 pt-2 sm:pt-0 ${
+                      isLight ? 'border-slate-200' : 'border-slate-800'
+                    }`}>
                       <div className="text-right font-mono">
-                        <div className="font-black text-sm text-emerald-400">{formatAud(inv.amountAud)}</div>
+                        <div className={`font-black text-sm ${isLight ? 'text-emerald-700' : 'text-emerald-400'}`}>{formatAud(inv.amountAud)}</div>
                         <div className="text-[9px] text-slate-500">inc. GST</div>
                       </div>
 
@@ -848,7 +880,11 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                               setTradeInvoices(next);
                               showToast(`Invoice ${inv.id} marked as settled and deposit cleared from client bank.`, 'success');
                             }}
-                            className="px-3 py-2 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition-all cursor-pointer"
+                            className={`px-3 py-2 rounded-xl border text-xs font-bold transition-all cursor-pointer ${
+                              isLight
+                                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                                : 'bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 border-emerald-500/30'
+                            }`}
                           >
                             Mark Paid
                           </button>
@@ -856,7 +892,11 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                         <button
                           type="button"
                           onClick={() => setViewingTradeInvoice(inv)}
-                          className="px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                            isLight
+                              ? 'bg-slate-200 hover:bg-slate-300 text-slate-800'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                          }`}
                         >
                           <Printer className="w-3.5 h-3.5" />
                           <span>Invoice PDF</span>
@@ -891,7 +931,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                     <span>256-Bit SSL Encrypted Checkout</span>
                   </div>
                   <h3 className="text-lg font-black text-white">
-                    Upgrade to {payTarget === 'starter_plan' ? 'Starter Plan' : payTarget === 'pro_planner' ? 'Pro Plan' : 'Enterprise Portfolio'}
+                    Upgrade to {payTarget === 'starter_plan' ? 'Starter Plan' : payTarget === 'pro_planner' ? 'Growth Plan' : 'Enterprise Portfolio'}
                   </h3>
                 </div>
                 <button
@@ -1039,7 +1079,7 @@ export const BillingInvoicesHub: React.FC<BillingInvoicesHubProps> = ({
                   </div>
                   <h4 className="text-lg font-black text-white">Payment Securely Completed!</h4>
                   <p className="text-xs text-slate-400">
-                    Your active commercial planning suite is now upgraded to Commercial Pro. Official tax invoice is generated.
+                    Your active commercial planning suite is now upgraded to Growth Plan. Official tax invoice is generated.
                   </p>
                 </div>
               )}

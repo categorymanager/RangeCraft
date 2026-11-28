@@ -72,6 +72,7 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
     currentTab === 'overview' ||
     currentTab === 'directory' ||
     currentTab === 'wholesale' ||
+    currentTab === 'scan-order' ||
     currentTab === 'billing' ||
     currentTab === 'crm' ||
     currentTab === 'activity-log';
@@ -118,7 +119,7 @@ export const FloatingStepNavPaddles: React.FC<FloatingStepNavPaddlesProps> = ({
   }
 
   return (
-    <div className="hidden md:block">
+    <div className="no-print hidden md:block">
       {/* LEFT FLOATING PADDLE: PREVIOUS STEP */}
       <AnimatePresence>
         {prevStep && (

@@ -10,6 +10,9 @@ import {
 } from 'lucide-react';
 import { AppTab, Product, StrategyKPIs, ThemeMode, WeekPromotion } from '../types';
 import { formatAud } from '../utils/formatters';
+import { findNextClashFreeWeek } from '../utils/promoPlannerEngine';
+import { trackEvent } from '../utils/analytics';
+import insightsHeroImg from '../assets/images/insights_margin_hero_1795833147438.jpg';
 
 interface CommercialInsightsViewProps {
   products: Product[];
@@ -51,6 +54,8 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
     const items: Array<{
       id: string;
       category: 'recovery' | 'risk' | 'conflict';
+      sku?: string;
+      weekNumber?: number;
       badge: string;
       title: string;
       explanation: string;
@@ -61,6 +66,7 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
     }> = [];
 
     promotions.forEach((promo) => {
+      if (promo.isPromoSkipped || !promo.heroSku) return;
       const hero = productMap.get(promo.heroSku);
       if (!hero) return;
 
@@ -70,9 +76,11 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
         items.push({
           id: `margin-risk-w${promo.weekNumber}`,
           category: 'risk',
+          sku: hero.sku,
+          weekNumber: promo.weekNumber,
           badge: 'Margin Risk Alert',
           title: `${hero.name} projected below 28% target margin in Week ${promo.weekNumber}`,
-          explanation: `Current ${promo.mechanic?.label || 'promo'} yields ${promo.projectedMarginPercent}% gross margin. Narrowing discount to ${suggestedDiscount}% or securing scan co-op recovers lost profit.`,
+          explanation: `Current ${promo.mechanic?.label || 'promo'} yields ${promo.projectedMarginPercent}% gross margin. Narrowing discount to ${suggestedDiscount}% or securing case deal / scan co-op recovers lost profit.`,
           impactAud: recovery,
           impactText: `Potential recovery: +${formatAud(recovery)}`,
           actionText: `Adjust to ${suggestedDiscount}% in Promo Builder`,
@@ -89,6 +97,8 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
         items.push({
           id: `clash-w${promo.weekNumber}`,
           category: 'conflict',
+          sku: hero.sku,
+          weekNumber: promo.weekNumber,
           badge: 'Rule Spacing Conflict',
           title: `Week ${promo.weekNumber} triggers a Custom Scheduling Rule alert`,
           explanation: promo.clashWarnings[0]?.message || 'Adjacent promotional spacing requires reslotting.',
@@ -106,22 +116,25 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
 
     products.forEach((prod) => {
       const scheduled = promotions.some(
-        (p) => p.heroSku === prod.sku || (p.secondarySkus || []).includes(prod.sku)
+        (p) => !p.isPromoSkipped && (p.heroSku === prod.sku || (p.secondarySkus || []).includes(prod.sku))
       );
       if (!scheduled && prod.marginPercent >= 40) {
+        const targetWeek = findNextClashFreeWeek(prod, promotions, products);
         const upside = Math.round((prod.weeklyUnitsBaseline || 100) * prod.rrp * (prod.marginPercent / 100) * 1.35);
         items.push({
           id: `upside-${prod.sku}`,
           category: 'recovery',
+          sku: prod.sku,
+          weekNumber: targetWeek,
           badge: 'Profit Recovery Opportunity',
           title: `Unscheduled high-margin SKU: ${prod.name}`,
-          explanation: `${prod.marginPercent.toFixed(1)}% base margin with zero promotional slots currently assigned. Pre-loaded at 20% discount.`,
+          explanation: `${prod.marginPercent.toFixed(1)}% base margin with zero promotional slots assigned. Pre-loaded for clash-free Week ${targetWeek} at 20% discount.`,
           impactAud: upside,
           impactText: `Est. profit upside: +${formatAud(upside)}`,
-          actionText: 'Build Promotion (20% Off)',
+          actionText: `Build Week ${targetWeek} Promo (20% Off)`,
           onAction: () => onOpenPromotionBuilderWithConfig({
             sku: prod.sku,
-            weekNumber: 4,
+            weekNumber: targetWeek,
             discountPercent: 20
           }),
         });
@@ -130,6 +143,17 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
 
     return items.sort((a, b) => b.impactAud - a.impactAud);
   }, [products, promotions, productMap, onOpenPromotionBuilderWithConfig]);
+
+  const handleInsightAction = (ins: (typeof insights)[number]) => {
+    trackEvent('insight_action_clicked', {
+      insight_id: ins.id,
+      category: ins.category,
+      sku: ins.sku || '',
+      week_number: ins.weekNumber ?? 0,
+      impact_aud: ins.impactAud,
+    });
+    ins.onAction();
+  };
 
   const visibleInsights = useMemo(() => {
     if (filter === 'all') return insights;
@@ -146,34 +170,44 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className={`text-2xl font-bold tracking-tight ${isLight ? 'text-[#0F172A]' : 'text-white'}`}>
-            Commercial Insights
-          </h1>
-          <p className={`text-sm mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
-            Prioritised profit recovery opportunities, margin risk alerts, and rule conflict fixes.
-          </p>
-        </div>
+      <div className={`rounded-2xl overflow-hidden border ${isLight ? 'bg-white border-slate-200 shadow-xs' : 'bg-[#111726] border-slate-800'}`}>
+        <div className="h-1.5 w-full bg-gradient-to-r from-[#2563EB] via-[#10B981] to-[#F59E0B]" />
+        <div className="p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center lg:justify-between gap-5">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-4">
+            <img
+              src={insightsHeroImg}
+              alt="Commercial margin recovery overview"
+              className="w-full sm:w-28 h-24 sm:h-20 rounded-xl object-cover shrink-0 border border-slate-200 dark:border-slate-700"
+            />
+            <div>
+              <h1 className={`text-2xl font-bold tracking-tight ${isLight ? 'text-[#0F172A]' : 'text-white'}`}>
+                Commercial Insights
+              </h1>
+              <p className={`text-sm mt-1 ${isLight ? 'text-slate-600' : 'text-slate-400'}`}>
+                Prioritised profit recovery opportunities, margin risk alerts, and rule conflict fixes.
+              </p>
+            </div>
+          </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {kpis.totalClashesCount > 0 && (
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            {kpis.totalClashesCount > 0 && (
+              <button
+                type="button"
+                onClick={onAutoFixClashes}
+                className="min-h-[40px] px-4 py-2 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Auto-Resolve Conflicts</span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={onAutoFixClashes}
-              className="min-h-[40px] px-4 py-2 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+              onClick={onOpenAiOptimizer}
+              className="min-h-[40px] px-4 py-2 rounded-lg bg-gradient-to-r from-[#2563EB] to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-semibold cursor-pointer whitespace-nowrap shadow-xs"
             >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Auto-Resolve Conflicts</span>
+              Auto-Formulate Optimal Schedule
             </button>
-          )}
-          <button
-            type="button"
-            onClick={onOpenAiOptimizer}
-            className="min-h-[40px] px-4 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer"
-          >
-            Auto-Formulate Optimal Schedule
-          </button>
+          </div>
         </div>
       </div>
 
@@ -294,7 +328,7 @@ export const CommercialInsightsView: React.FC<CommercialInsightsViewProps> = ({
 
               <button
                 type="button"
-                onClick={ins.onAction}
+                onClick={() => handleInsightAction(ins)}
                 className="min-h-[40px] px-4 py-2 rounded-lg bg-[#2563EB] hover:bg-blue-700 text-white text-xs font-semibold inline-flex items-center gap-1.5 shrink-0 cursor-pointer whitespace-nowrap"
               >
                 <span>{ins.actionText}</span>

@@ -34,6 +34,7 @@ import { auth, syncUserProfile, saveCheckoutBusinessProfile, upgradeSubscription
 import {
   trackBeginCheckout,
   trackPurchaseSuccess,
+  trackSubscriptionUpgrade,
   trackButtonClick
 } from '../utils/analytics';
 import {
@@ -573,6 +574,9 @@ export const CheckoutPageView: React.FC<CheckoutPageViewProps> = ({
           data.transactionId || 'tx_' + Date.now(),
           method
         );
+        if (targetTier) {
+          trackSubscriptionUpgrade(getPlanDisplayTitle(), currentPrice, targetTier);
+        }
 
         if (onLogTransaction) {
           onLogTransaction(
@@ -767,9 +771,9 @@ export const CheckoutPageView: React.FC<CheckoutPageViewProps> = ({
                       </h2>
                       <p className="text-xs text-slate-500 mt-0.5">
                         {planType === 'pro_subscription'
-                          ? 'Full Pro commercial access · Cancel or downgrade anytime'
+                          ? 'Full Growth commercial access · Cancel or downgrade anytime'
                           : planType === 'single_export'
-                          ? 'One-time deliverable unlock · Or upgrade to Commercial Pro for unlimited packs'
+                          ? 'One-time deliverable unlock · Or upgrade to Growth Plan for unlimited packs'
                           : 'Transparent Australian B2B pricing · Includes 10% GST'}
                       </p>
                     </div>

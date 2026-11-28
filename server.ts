@@ -4,9 +4,9 @@ import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import Stripe from "stripe";
 import dotenv from "dotenv";
-import { autoReslotAndFixClashes, generateDefault52WeekPlan } from "./src/utils/promoPlannerEngine";
+import { autoReslotAndFixClashes, generateDefault52WeekPlan, generateOptimalScheduleWithPreferences } from "./src/utils/promoPlannerEngine";
 import { AUSTRALIAN_52_WEEKS } from "./src/data/calendarEvents";
-import { Product, WeekPromotion } from "./src/types";
+import { Product, WeekPromotion, SchedulePreferences, AiParsedConstraints } from "./src/types";
 
 dotenv.config();
 
@@ -75,19 +75,22 @@ async function callGeminiWithResilience(
   const ai = getGeminiClient();
   if (!ai) return null;
 
-  // Prioritize high-availability and fast response models with fallback to latest
-  const candidateModels = options?.models || ["gemini-3.1-flash-lite", "gemini-flash-latest", "gemini-3.7-flash"];
+  // Prioritize Gemini 4 Hydrogen with fast flash fallback
+  const candidateModels = options?.models || ["gemini-4-hydrogen", "gemini-3.1-flash-lite"];
 
   for (const model of candidateModels) {
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
+        const config: Record<string, any> = {
+          responseMimeType: options?.responseMimeType || "application/json",
+        };
+        if (!model.startsWith("gemini-4") && options?.temperature !== undefined) {
+          config.temperature = options.temperature;
+        }
         const response = await ai.models.generateContent({
           model,
           contents: prompt,
-          config: {
-            responseMimeType: options?.responseMimeType || "application/json",
-            temperature: options?.temperature ?? 0.3,
-          },
+          config,
         });
 
         const parsed = parseJsonSafely(response.text);
@@ -109,140 +112,140 @@ async function callGeminiWithResilience(
 // AI Promotional Strategy Generator
 app.post("/api/generate-strategy", async (req: Request, res: Response) => {
   try {
-    const { products, strategicObjective, retailerModel, customConstraints } = req.body;
-    
+    const {
+      products,
+      strategicObjective,
+      retailerModel,
+      customConstraints,
+      preferences,
+    } = req.body as {
+      products?: Product[];
+      strategicObjective?: SchedulePreferences['strategicObjective'];
+      retailerModel?: string;
+      customConstraints?: string;
+      preferences?: Partial<SchedulePreferences>;
+    };
+
     if (!products || !Array.isArray(products) || products.length === 0) {
       return res.status(400).json({ error: "No products provided for promotional strategy planning" });
     }
 
-    const productCatalogSummary = products.map((p: Product) => ({
-      sku: p.sku,
-      name: p.name,
-      category: p.category,
-      subcategory: p.subcategory,
-      rrp: p.rrp,
-      cost: p.cost,
-      marginPercent: p.marginPercent || Number((((p.rrp - p.cost) / p.rrp) * 100).toFixed(1)),
-      performanceTier: p.performanceTier,
-      seasonalPeak: p.seasonalPeak,
-      supplierCoOpEligible: p.supplierCoOpEligible,
-      targetWeeks: p.targetWeeks || [],
-      minPromoGapWeeks: p.minPromoGapWeeks || 4
-    }));
+    const mergedPreferences: Partial<SchedulePreferences> = {
+      preventCategoryCannibalization: preferences?.preventCategoryCannibalization ?? false,
+      preventSubcategoryCannibalization: preferences?.preventSubcategoryCannibalization ?? true,
+      preventBrandSupplierClash: preferences?.preventBrandSupplierClash ?? true,
+      preventVariantClash: preferences?.preventVariantClash ?? true,
+      cadenceMode: preferences?.cadenceMode ?? 'every_week',
+      gapIntervalWeeks: preferences?.gapIntervalWeeks ?? 3,
+      minHiatusWeeks: preferences?.minHiatusWeeks ?? 4,
+      maxPromosPerSkuPerYear: preferences?.maxPromosPerSkuPerYear ?? 14,
+      strategicObjective: preferences?.strategicObjective || strategicObjective || 'balanced_growth',
+      retailerModel: preferences?.retailerModel || retailerModel || 'National Supermarkets & Metro Grocery',
+      aiPromptRuleText: preferences?.aiPromptRuleText ?? customConstraints ?? '',
+    };
 
-    const prompt = `
-      You are an expert Australian retail category strategist and trade revenue planner at RangeCraft.
-      You are generating an optimized, non-repetitive 52-week promotional calendar.
+    const userPromptRuleText = (mergedPreferences.aiPromptRuleText || '').trim();
+    let parsedAiDirectives: AiParsedConstraints | undefined = undefined;
 
-      PORTFOLIO CONSTRAINTS & CRITICAL DIRECTIVES:
-      1. DO NOT REPLICATE THE SAME SKU OR MECHANIC EVERY WEEK. Every SKU in the catalog MUST be strategically distributed across the 52 weeks according to its role and seasonality.
-      2. SKU DIVERSITY & DISTRIBUTION:
-         - Tier 1 Heroes (Anchor High-Velocity Best-Sellers): Feature during major national retail moments (Australia Day W4, Easter W13, EOFY W25, Black Friday W47, Christmas/Boxing Day W51-52).
-         - Tier 2 Margin Builders: Feature across regular trading weeks to build basket profitability.
-         - Tier 3 Niche & Tier 4 Clearance: Feature during appropriate transition windows (e.g. End of Summer W8-9, EOFY stock runout W26, Winter clearance W35).
-      3. NON-MONOTONOUS, PROFIT-OPTIMIZED PROMO MECHANICS:
-         - Select diverse mechanics from: "percentage_off", "multi_buy", "price_drop", "clearance_markdown", "bundle_gwp", "bogo".
-         - High-ticket items (> $100): Prefer "price_drop" (e.g. "Save $30 - Now $149") or "percentage_off".
-         - FMCG / Low-to-mid ticket consumables (< $35): Prefer "multi_buy" (e.g. "2 for $35") or "bogo" to drive transaction size while protecting unit economics.
-         - Gifting periods (Mother's Day W19, Father's Day W36, Christmas W50): Use "bundle_gwp" or package deals.
-         - Season changeover weeks: Use "clearance_markdown" (30-40% off).
-      4. CUSTOM 4-WEEK HIATUS RULE: Ensure a minimum 4-week gap between promotions of the same SKU to satisfy custom scheduling rules and prevent baseline cannibalization.
-      5. PROFIT PRIORITIZATION: Maintain a healthy gross margin floor (>= 30%). Inject vendor co-op scan funding for deep discounts if supplierCoOpEligible is true.
-      6. GENERIC CHANNEL LABELS ONLY: Use ONLY generic retail channel labels (e.g. National Supermarkets, Metro Grocery, Independent Grocers, Big-Box Retail, Online Marketplaces). Never name specific real-world retailers or government bodies; refer to spacing/pricing guardrails as Custom Scheduling Rules.
+    if (userPromptRuleText.length > 0) {
+      const productCatalogSummary = products.map((p: Product) => ({
+        sku: p.sku,
+        name: p.name,
+        category: p.category,
+        subcategory: p.subcategory,
+        supplierBrand: p.supplierBrand || '',
+        variantGroup: p.variantGroup || '',
+        rrp: p.rrp,
+        cost: p.cost,
+        defaultCaseDealType: p.defaultCaseDealType || 'none',
+        defaultCaseDealValue: p.defaultCaseDealValue || 0,
+        marginPercent: p.marginPercent || Number((((p.rrp - p.cost) / p.rrp) * 100).toFixed(1)),
+        performanceTier: p.performanceTier,
+        seasonalPeak: p.seasonalPeak,
+        targetWeeks: p.targetWeeks || [],
+        minPromoGapWeeks: p.minPromoGapWeeks || 4,
+      }));
 
-      INPUT PARAMETERS:
-      - Retailer Model: ${retailerModel || 'National Supermarkets & General Mass Merchant'}
-      - Primary Objective: ${strategicObjective || 'balanced_growth'}
-      - Custom User Rules & Mandates: ${customConstraints || 'Ensure optimal distribution across all SKUs, high profit lift, and zero clashes.'}
+      const ruleExtractionPrompt = `
+        You are an expert retail category strategist interpreting a commercial manager's custom scheduling rules.
+        Translate their natural-language prompt and preferences into exact structured scheduling constraints.
+        Use generic retail channel names only (never mention specific real-world supermarkets or government bodies).
 
-      AVAILABLE PRODUCT CATALOG:
-      ${JSON.stringify(productCatalogSummary, null, 2)}
+        USER CUSTOM PROMPT RULES:
+        "${userPromptRuleText}"
 
-      Respond ONLY with valid JSON conforming to this schema:
-      {
-        "rationale": "Detailed strategic rationale summarizing how profit was maximized, SKU distribution was balanced without repetition, and Australian retail moments were capitalized on.",
-        "promotions": [
-          {
-            "weekNumber": 1,
-            "campaignTheme": "Descriptive Campaign Name",
-            "heroSku": "EXACT-SKU-ID",
-            "secondarySkus": ["SKU-2", "SKU-3"],
-            "strategicObjective": "event_hero" | "volume_grab" | "margin_builder" | "basket_driver" | "clearance" | "competitive_defense",
-            "mechanic": {
-              "type": "percentage_off" | "multi_buy" | "price_drop" | "clearance_markdown" | "bundle_gwp" | "bogo",
-              "discountValue": 20,
-              "promoRrp": 39.95,
-              "label": "20% Off RRP",
-              "supplierFundingPerUnit": 0
-            },
-            "cataloguePlacement": "front_cover" | "double_spread" | "category_feature" | "digital_app" | "checkout_end"
-          }
-        ]
-      }
-    `;
+        STRUCTURED UI PREFERENCES ALREADY SELECTED:
+        ${JSON.stringify(mergedPreferences)}
 
-    const aiResult = await callGeminiWithResilience(prompt, { models: ["gemini-3.1-flash-lite", "gemini-flash-latest"] });
-    
-    if (aiResult && aiResult.promotions && Array.isArray(aiResult.promotions) && aiResult.promotions.length > 0) {
-      // Map AI weeks into WeekPromotion array and run constraint-satisfaction solver to guarantee 0 clashes & exact financials
-      const rawAiPromos: WeekPromotion[] = AUSTRALIAN_52_WEEKS.map((wEvent, idx) => {
-        const wNum = idx + 1;
-        const matchingAi = aiResult.promotions.find((p: any) => p.weekNumber === wNum) || aiResult.promotions[idx % aiResult.promotions.length];
-        const heroSku = matchingAi?.heroSku || products[idx % products.length].sku;
-        
-        return {
-          weekNumber: wNum,
-          quarter: wEvent.quarter as any,
-          month: wEvent.month,
-          startDate: wEvent.startDate,
-          endDate: wEvent.endDate,
-          australianEvent: wEvent.eventName,
-          isMajorRetailMoment: wEvent.isMajorRetailMoment,
-          campaignTheme: matchingAi?.campaignTheme || wEvent.defaultTheme,
-          strategicObjective: matchingAi?.strategicObjective || (wEvent.isMajorRetailMoment ? 'event_hero' : 'margin_builder'),
-          heroSku,
-          secondarySkus: matchingAi?.secondarySkus || [],
-          mechanic: matchingAi?.mechanic || {
-            type: 'percentage_off',
-            discountValue: 20,
-            promoRrp: 0,
-            label: '20% Off RRP',
-            supplierFundingPerUnit: 0
-          },
-          cataloguePlacement: matchingAi?.cataloguePlacement || (wEvent.isMajorRetailMoment ? 'front_cover' : 'category_feature'),
-          activeChannels: ['Print Catalogue (Feature Page)', 'Digital App Push', 'In-Store Gondola End'],
-          projectedUnits: 0,
-          projectedRevenueAud: 0,
-          projectedMarginPercent: 0,
-          projectedMarginAud: 0,
-          tradeSpendAud: 0,
-          clashWarnings: [],
-          isAiGenerated: true
+        PRODUCT CATALOG SUMMARY:
+        ${JSON.stringify(productCatalogSummary, null, 2)}
+
+        Respond ONLY with valid JSON conforming to this schema:
+        {
+          "preferredCadenceMode": "every_week" | "with_gaps" | null,
+          "gapIntervalWeeks": number | null,
+          "minHiatusWeeks": number | null,
+          "maxPromosPerSkuPerYear": number | null,
+          "preventCategoryCannibalization": boolean | null,
+          "preventSubcategoryCannibalization": boolean | null,
+          "preventBrandSupplierClash": boolean | null,
+          "preventVariantClash": boolean | null,
+          "excludedWeeks": [1..52 numbers to skip as non-promo gap weeks],
+          "pinnedWeeks": [{ "weekNumber": 1..52, "sku": "EXACT-SKU-FROM-CATALOG" }],
+          "minMarginFloorPercent": number | null,
+          "maxDiscountPercent": number | null,
+          "strategicObjective": "balanced_growth" | "margin_protection" | "volume_maximization" | "accc_fortress" | null,
+          "rationale": "Concise 2-sentence explanation of how your custom rules and profit optimization directives were applied."
+        }
+      `;
+
+      const aiExtracted = await callGeminiWithResilience(ruleExtractionPrompt, {
+        models: ["gemini-4-hydrogen", "gemini-3.1-flash-lite"],
+      });
+
+      if (aiExtracted && typeof aiExtracted === "object") {
+        parsedAiDirectives = {
+          ...(aiExtracted.preferredCadenceMode === "every_week" || aiExtracted.preferredCadenceMode === "with_gaps"
+            ? { preferredCadenceMode: aiExtracted.preferredCadenceMode }
+            : {}),
+          ...(typeof aiExtracted.gapIntervalWeeks === "number" ? { gapIntervalWeeks: aiExtracted.gapIntervalWeeks } : {}),
+          ...(typeof aiExtracted.minHiatusWeeks === "number" ? { minHiatusWeeks: aiExtracted.minHiatusWeeks } : {}),
+          ...(typeof aiExtracted.maxPromosPerSkuPerYear === "number" ? { maxPromosPerSkuPerYear: aiExtracted.maxPromosPerSkuPerYear } : {}),
+          ...(typeof aiExtracted.preventCategoryCannibalization === "boolean" ? { preventCategoryCannibalization: aiExtracted.preventCategoryCannibalization } : {}),
+          ...(typeof aiExtracted.preventSubcategoryCannibalization === "boolean" ? { preventSubcategoryCannibalization: aiExtracted.preventSubcategoryCannibalization } : {}),
+          ...(typeof aiExtracted.preventBrandSupplierClash === "boolean" ? { preventBrandSupplierClash: aiExtracted.preventBrandSupplierClash } : {}),
+          ...(typeof aiExtracted.preventVariantClash === "boolean" ? { preventVariantClash: aiExtracted.preventVariantClash } : {}),
+          ...(Array.isArray(aiExtracted.excludedWeeks) ? { excludedWeeks: aiExtracted.excludedWeeks.filter((n: any) => typeof n === "number") } : {}),
+          ...(Array.isArray(aiExtracted.pinnedWeeks) ? { pinnedWeeks: aiExtracted.pinnedWeeks.filter((p: any) => p && typeof p.weekNumber === "number" && typeof p.sku === "string") } : {}),
+          ...(typeof aiExtracted.minMarginFloorPercent === "number" ? { minMarginFloorPercent: aiExtracted.minMarginFloorPercent } : {}),
+          ...(typeof aiExtracted.maxDiscountPercent === "number" ? { maxDiscountPercent: aiExtracted.maxDiscountPercent } : {}),
+          ...(aiExtracted.strategicObjective ? { strategicObjective: aiExtracted.strategicObjective } : {}),
+          ...(typeof aiExtracted.rationale === "string" && aiExtracted.rationale.trim() ? { rationale: aiExtracted.rationale } : {}),
         };
-      });
-
-      const { repairedPromotions } = autoReslotAndFixClashes(rawAiPromos, products);
-      
-      return res.json({
-        rationale: aiResult.rationale || "Strategy optimized across all 52 weeks with balanced SKU distribution, varied promotional mechanics, and strict custom hiatus rule compliance.",
-        promotions: repairedPromotions
-      });
+      }
     }
 
-    // High-performance algorithmic fallback if AI model is unreachable
-    const defaultPlan = generateDefault52WeekPlan(products);
-    return res.json({
-      rationale: "Automated RangeCraft Optimization Engine synthesized an airtight 52-week promotional plan. All SKUs are fully distributed across the calendar with diversified promotional mechanics (percentage off, multi-buys, price drops, bundles, and seasonal markdowns), optimized gross profit margins, and zero custom rule hiatus clashes.",
-      promotions: defaultPlan
-    });
+    const { promotions, summaryRationale } = generateOptimalScheduleWithPreferences(
+      products,
+      mergedPreferences,
+      parsedAiDirectives
+    );
 
+    return res.json({
+      rationale: summaryRationale,
+      promotions,
+      appliedDirectives: parsedAiDirectives || null,
+    });
   } catch (error: any) {
     console.error("Error generating strategy:", error);
     try {
-      const fallbackPlan = generateDefault52WeekPlan(req.body.products || []);
+      const { promotions, summaryRationale } = generateOptimalScheduleWithPreferences(
+        req.body.products || [],
+        req.body.preferences
+      );
       return res.json({
-        rationale: "RangeCraft Optimization Engine successfully distributed all SKUs across 52 weeks with profit prioritization and non-repetitive mechanics.",
-        promotions: fallbackPlan
+        rationale: summaryRationale,
+        promotions,
       });
     } catch {
       return res.status(500).json({ error: "Strategy generation failed" });
@@ -960,7 +963,7 @@ app.post("/api/checkout/express", async (req: Request, res: Response) => {
   try {
     const {
       exportId = "pro_planner",
-      itemName = "Commercial Pro Subscription",
+      itemName = "Growth Plan Subscription",
       priceAud = 149,
       planType = "pro_subscription",
       billingCycle = "monthly",
@@ -1034,7 +1037,7 @@ app.get("/api/stripe/tax-invoice/:invoiceId", (req: Request, res: Response) => {
     },
     lineItems: [
       {
-        description: (req.query.itemDescription as string) || "RangeCraft Commercial Pro License & Export Access",
+        description: (req.query.itemDescription as string) || "RangeCraft Growth Plan License & Export Access",
         amountAud: subtotal,
         gstAud: gst,
         totalAud: amount,

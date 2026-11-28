@@ -47,7 +47,7 @@ export const FrostedPaywallOverlay: React.FC<FrostedPaywallOverlayProps> = ({
         {/* Top Badge */}
         <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 dark:bg-indigo-950/80 border border-indigo-200 dark:border-indigo-800 text-indigo-700 dark:text-indigo-300 text-xs font-bold mb-4">
           <Lock className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-          <span>{trialEligible ? 'PRO & REVERSE FREE TRIAL ACCESS' : 'COMMERCIAL PRO ACCESS'}</span>
+          <span>{trialEligible ? 'GROWTH TRIAL ACCESS' : 'GROWTH PLAN ACCESS'}</span>
         </div>
 
         <h3 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
@@ -91,10 +91,10 @@ export const FrostedPaywallOverlay: React.FC<FrostedPaywallOverlayProps> = ({
             <Zap className="w-4 h-4 text-amber-300 fill-amber-300" />
             <span>
               {isPaidActive
-                ? 'Manage Pro Plan'
+                ? 'Manage Growth Plan'
                 : trialEligible
-                ? 'Start 14-Day Free Pro Access'
-                : 'Upgrade to Pro Plan'}
+                ? 'Start 14-Day Free Growth Access'
+                : 'Upgrade to Growth Plan'}
             </span>
           </button>
         </div>

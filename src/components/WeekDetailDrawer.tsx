@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { WeekPromotion, Product, MechanicType, CataloguePlacement, PromoMechanic, StrategicObjective } from '../types';
-import { calculateWeekMultiSkuFinancials } from '../utils/promoPlannerEngine';
+import { WeekPromotion, Product, MechanicType, CataloguePlacement, PromoMechanic, StrategicObjective, CaseDealType } from '../types';
+import { calculateWeekMultiSkuFinancials, calculateCaseDealUnitSavings } from '../utils/promoPlannerEngine';
 import { formatAud, formatNumber, formatPercent } from '../utils/formatters';
 import { safeFetch } from '../utils/api';
 import {
@@ -60,12 +60,18 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
 }) => {
   // 1. Primary Editable State Fields
   const [heroSku, setHeroSku] = useState(weekPromotion.heroSku);
+  const [isPromoSkipped, setIsPromoSkipped] = useState<boolean>(Boolean(weekPromotion.isPromoSkipped));
   const [campaignTheme, setCampaignTheme] = useState(weekPromotion.campaignTheme);
   const [mechanicType, setMechanicType] = useState<MechanicType>(weekPromotion.mechanic?.type || 'percentage_off');
   const [discountValue, setDiscountValue] = useState<number>(weekPromotion.mechanic?.discountValue || 20);
   const [promoRrp, setPromoRrp] = useState<number>(weekPromotion.mechanic?.promoRrp || 0);
   const [mechanicLabel, setMechanicLabel] = useState(weekPromotion.mechanic?.label || '');
   const [supplierFundingPerUnit, setSupplierFundingPerUnit] = useState<number>(weekPromotion.mechanic?.supplierFundingPerUnit || 0);
+  const [caseDealType, setCaseDealType] = useState<CaseDealType>(weekPromotion.mechanic?.caseDealType || 'none');
+  const [caseDealValue, setCaseDealValue] = useState<number>(weekPromotion.mechanic?.caseDealValue || 0);
+  const [skuCaseDeals, setSkuCaseDeals] = useState<Record<string, { type: CaseDealType; value: number }>>(
+    weekPromotion.skuCaseDeals || {}
+  );
   const [secondarySkus, setSecondarySkus] = useState<string[]>(weekPromotion.secondarySkus || []);
   const [cataloguePlacement, setCataloguePlacement] = useState<CataloguePlacement>(weekPromotion.cataloguePlacement || 'double_spread');
   const [activeChannels, setActiveChannels] = useState<string[]>(
@@ -98,6 +104,7 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
   // Sync state whenever active week promotion changes
   useEffect(() => {
     setHeroSku(weekPromotion.heroSku);
+    setIsPromoSkipped(Boolean(weekPromotion.isPromoSkipped));
     setCampaignTheme(weekPromotion.campaignTheme);
     setMechanicType(weekPromotion.mechanic?.type || 'percentage_off');
     setDiscountValue(weekPromotion.mechanic?.discountValue || 20);
@@ -106,6 +113,9 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
     setPromoRrp(calculatedPromo);
     setMechanicLabel(weekPromotion.mechanic?.label || '');
     setSupplierFundingPerUnit(weekPromotion.mechanic?.supplierFundingPerUnit || 0);
+    setCaseDealType(weekPromotion.mechanic?.caseDealType || heroProd?.defaultCaseDealType || 'none');
+    setCaseDealValue(weekPromotion.mechanic?.caseDealValue ?? heroProd?.defaultCaseDealValue ?? 0);
+    setSkuCaseDeals(weekPromotion.skuCaseDeals || {});
     setSecondarySkus(weekPromotion.secondarySkus || []);
     setCataloguePlacement(weekPromotion.cataloguePlacement || 'double_spread');
     setActiveChannels(weekPromotion.activeChannels || ['Print Catalogue', 'In-Store POS', 'Digital App Feature']);
@@ -115,7 +125,7 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
     setAiAdvice(null);
     setAiError(null);
     setShowSaveSuccess(false);
-  }, [weekPromotion.weekNumber, weekPromotion.heroSku, products]);
+  }, [weekPromotion.weekNumber, weekPromotion.heroSku, weekPromotion.isPromoSkipped, products]);
 
   useEffect(() => {
     setHeroStockDraft(
@@ -147,6 +157,10 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
       }
       if (prod.supplierCoOpEligible && supplierFundingPerUnit === 0) {
         setSupplierFundingPerUnit(Number((prod.cost * 0.1).toFixed(2)));
+      }
+      if (prod.defaultCaseDealType && prod.defaultCaseDealType !== 'none') {
+        setCaseDealType(prod.defaultCaseDealType);
+        setCaseDealValue(prod.defaultCaseDealValue || 0);
       }
     }
   };
@@ -224,20 +238,30 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
     discountValue,
     promoRrp: promoRrp || (heroProduct ? Number((heroProduct.rrp * 0.8).toFixed(2)) : 0),
     label: mechanicLabel || `${discountValue}% Off RRP`,
-    supplierFundingPerUnit
+    supplierFundingPerUnit,
+    caseDealType,
+    caseDealValue: caseDealType === 'none' ? 0 : caseDealValue,
   };
 
   const secondaryProductsList = activeSecondarySkus
     .map(sku => products.find(p => p.sku === sku))
     .filter((p): p is Product => Boolean(p));
 
+  const effectiveSkuCaseDeals: Record<string, { type: CaseDealType; value: number }> = {
+    ...skuCaseDeals,
+    ...(heroProduct && caseDealType !== 'none' && caseDealValue > 0
+      ? { [heroProduct.sku]: { type: caseDealType, value: caseDealValue } }
+      : {}),
+  };
+
   // 100% Mathematically Calculated Combined Financials for all active SKUs in the week
-  const liveFin = heroProduct
+  const liveFin = !isPromoSkipped && heroProduct
     ? calculateWeekMultiSkuFinancials(
         heroProduct,
         secondaryProductsList,
         currentMechanic,
-        weekPromotion.isMajorRetailMoment
+        weekPromotion.isMajorRetailMoment,
+        effectiveSkuCaseDeals
       )
     : {
         promoRrp: 0,
@@ -247,6 +271,7 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
         projectedMarginAud: 0,
         projectedMarginPercent: 0,
         tradeSpendAud: 0,
+        caseDealSavingsTotalAud: 0,
         totalSkusCount: 0,
         skuBreakdown: []
       };
@@ -267,11 +292,13 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
   // Custom Rules 4-Week Hiatus Compliance Checker across ALL active SKUs in this week
   const currentWeekNum = weekPromotion.weekNumber;
   const currentWeekSkuSet = new Set([heroSku, ...activeSecondarySkus].filter(Boolean));
-  const adjacentClashingWeeks = allPromotions.filter(p => {
-    if (p.weekNumber === currentWeekNum || Math.abs(p.weekNumber - currentWeekNum) > 4) return false;
-    const otherSkus = [p.heroSku, ...(p.secondarySkus || [])].filter(Boolean);
-    return otherSkus.some(s => currentWeekSkuSet.has(s));
-  });
+  const adjacentClashingWeeks = isPromoSkipped
+    ? []
+    : allPromotions.filter(p => {
+        if (p.isPromoSkipped || p.weekNumber === currentWeekNum || Math.abs(p.weekNumber - currentWeekNum) > 4) return false;
+        const otherSkus = [p.heroSku, ...(p.secondarySkus || [])].filter(Boolean);
+        return otherSkus.some(s => currentWeekSkuSet.has(s));
+      });
   const isAcccCompliant = adjacentClashingWeeks.length === 0;
 
   // Inventory Forecasting across Active Week SKUs (ignores SKUs with blank stockLevel)
@@ -361,13 +388,25 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
   const handleSave = () => {
     const updated: WeekPromotion = {
       ...weekPromotion,
-      heroSku,
-      campaignTheme,
+      isPromoSkipped,
+      heroSku: isPromoSkipped ? '' : heroSku,
+      campaignTheme: isPromoSkipped ? 'Regular Price / Baseline Recovery Week' : campaignTheme,
       strategicObjective,
-      secondarySkus: activeSecondarySkus,
-      mechanic: currentMechanic,
+      secondarySkus: isPromoSkipped ? [] : activeSecondarySkus,
+      mechanic: isPromoSkipped
+        ? {
+            type: 'percentage_off',
+            discountValue: 0,
+            promoRrp: 0,
+            label: 'No Active Promo (Gap Week)',
+            supplierFundingPerUnit: 0,
+            caseDealType: 'none',
+            caseDealValue: 0,
+          }
+        : currentMechanic,
+      skuCaseDeals: Object.keys(effectiveSkuCaseDeals).length > 0 ? effectiveSkuCaseDeals : undefined,
       cataloguePlacement,
-      activeChannels,
+      activeChannels: isPromoSkipped ? [] : activeChannels,
       projectedUnits: liveFin.projectedUnits,
       projectedRevenueAud: liveFin.projectedRevenueAud,
       projectedMarginPercent: liveFin.projectedMarginPercent,
@@ -384,12 +423,16 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
   // Reset to default
   const handleReset = () => {
     if (!heroProduct) return;
+    setIsPromoSkipped(false);
     setCampaignTheme(weekPromotion.australianEvent ? `${weekPromotion.australianEvent} Feature` : 'Weekly Promotional Feature');
     setMechanicType('percentage_off');
     setDiscountValue(20);
     setPromoRrp(Number((heroProduct.rrp * 0.8).toFixed(2)));
     setMechanicLabel(`20% Off RRP`);
     setSupplierFundingPerUnit(heroProduct.supplierCoOpEligible ? Number((heroProduct.cost * 0.1).toFixed(2)) : 0);
+    setCaseDealType('none');
+    setCaseDealValue(0);
+    setSkuCaseDeals({});
     setCataloguePlacement('double_spread');
   };
 
@@ -1152,6 +1195,31 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
           
           {/* 1. HERO SKU SELECTION & COMMERCIAL PROFILE */}
           <div className={`${mobileTab === 'plan' ? 'block' : 'hidden'} lg:block bg-white dark:bg-[#111726] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4`}>
+            {/* Week Active vs Baseline Recovery Gap Week Toggle */}
+            <div className="p-3 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-xs font-bold text-slate-900 dark:text-white">
+                  Week {weekPromotion.weekNumber} Scheduling Mode
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {isPromoSkipped
+                    ? 'Marked as a Baseline Recovery Gap Week (full RRP margin protection).'
+                    : 'Active promotional week with mechanic, case deal, and multi-SKU support.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPromoSkipped((prev) => !prev)}
+                className={`min-h-[36px] px-3 py-1.5 rounded-lg text-xs font-bold border cursor-pointer whitespace-nowrap transition-colors ${
+                  isPromoSkipped
+                    ? 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-600'
+                    : 'bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                }`}
+              >
+                {isPromoSkipped ? 'Resume Promotion in Week' : 'Pause as Gap Week'}
+              </button>
+            </div>
+
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-bold text-slate-900 dark:text-white flex items-center gap-2">
                 <ShoppingBag className="w-4 h-4 text-amber-500 dark:text-amber-400" />
@@ -1495,6 +1563,57 @@ export const WeekDetailDrawer: React.FC<WeekDetailDrawerProps> = ({
                 className="w-full min-h-[42px] bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-amber-500"
                 placeholder="e.g. Save 30% | 2 for $15 | Hot Buy $399"
               />
+            </div>
+
+            {/* Promotional Case Deal ($ or % Cost Reduction) */}
+            <div className="p-3.5 rounded-xl border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50/70 dark:bg-emerald-950/20 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-emerald-900 dark:text-emerald-300">
+                  Promotional Case Deal ($ or % Off COGS)
+                </span>
+                {heroProduct && caseDealType !== 'none' && caseDealValue > 0 && (
+                  <span className="text-[11px] font-mono font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                    -{formatAud(calculateCaseDealUnitSavings(heroProduct, caseDealType, caseDealValue))}/u · Week Lift: +{formatAud(liveFin.caseDealSavingsTotalAud)}
+                  </span>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    Case Deal Allowance Type
+                  </label>
+                  <select
+                    value={caseDealType}
+                    onChange={(e) => {
+                      const next = e.target.value as CaseDealType;
+                      setCaseDealType(next);
+                      if (next === 'none') setCaseDealValue(0);
+                    }}
+                    className="w-full min-h-[40px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 cursor-pointer"
+                  >
+                    <option value="none">No Case Deal</option>
+                    <option value="dollar_off_unit">$ Off Per Unit</option>
+                    <option value="dollar_off_case">$ Off Per Carton ({heroProduct?.unitsPerCarton || 12} u/ctn)</option>
+                    <option value="percent_off_cost">% Off Unit Cost</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-700 dark:text-slate-300 mb-1">
+                    {caseDealType === 'percent_off_cost' ? 'Cost Reduction (%)' : 'Allowance Amount ($ AUD)'}
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.1"
+                    disabled={caseDealType === 'none'}
+                    value={caseDealType === 'none' ? 0 : caseDealValue}
+                    onChange={(e) => setCaseDealValue(Math.max(0, parseFloat(e.target.value) || 0))}
+                    className="w-full min-h-[40px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-2 text-xs text-slate-900 dark:text-white focus:outline-none focus:border-emerald-500 tabular-nums disabled:opacity-50"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

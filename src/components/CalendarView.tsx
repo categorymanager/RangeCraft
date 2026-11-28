@@ -101,15 +101,16 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return calculateQuarterlySummaries(promotions);
   }, [promotions]);
 
-  // Aggregate executive metrics
+  // Aggregate executive metrics (exclude baseline gap weeks from promo clash/margin counts)
   const executiveMetrics = useMemo(() => {
-    const totalRev = promotions.reduce((acc, p) => acc + (p.projectedRevenueAud || 0), 0);
-    const totalMarginAud = promotions.reduce((acc, p) => acc + (p.projectedMarginAud || 0), 0);
+    const activeWeeks = promotions.filter(p => !p.isPromoSkipped && Boolean(p.heroSku));
+    const totalRev = activeWeeks.reduce((acc, p) => acc + (p.projectedRevenueAud || 0), 0);
+    const totalMarginAud = activeWeeks.reduce((acc, p) => acc + (p.projectedMarginAud || 0), 0);
     const blendedMargin = totalRev > 0 ? Number(((totalMarginAud / totalRev) * 100).toFixed(1)) : 0;
-    const majorEventWeeks = promotions.filter(p => p.isMajorRetailMoment).length;
-    const healthyCount = promotions.filter(p => (p.projectedMarginPercent || 0) >= 40 && p.clashWarnings.length === 0).length;
-    const moderateCount = promotions.filter(p => (p.projectedMarginPercent || 0) >= 25 && (p.projectedMarginPercent || 0) < 40 && p.clashWarnings.length === 0).length;
-    const clashOrLowCount = promotions.filter(p => (p.projectedMarginPercent || 0) < 25 || p.clashWarnings.length > 0).length;
+    const majorEventWeeks = activeWeeks.filter(p => p.isMajorRetailMoment).length;
+    const healthyCount = activeWeeks.filter(p => (p.projectedMarginPercent || 0) >= 40 && p.clashWarnings.length === 0).length;
+    const moderateCount = activeWeeks.filter(p => (p.projectedMarginPercent || 0) >= 25 && (p.projectedMarginPercent || 0) < 40 && p.clashWarnings.length === 0).length;
+    const clashOrLowCount = activeWeeks.filter(p => (p.projectedMarginPercent || 0) < 25 || p.clashWarnings.length > 0).length;
 
     return {
       totalRev,
@@ -136,37 +137,45 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
     return promotions.find(p => p.weekNumber === week) || promotions[0];
   }, [promotions, activeReslotWeek, selectedWeekNum]);
 
-  // 52 Weeks normalized view list (with multi-SKU metadata)
+  // 52 Weeks normalized view list (with multi-SKU metadata & baseline gap week styling)
   const weeksList = useMemo(() => {
     return Array.from({ length: 52 }, (_, i) => {
       const weekNum = i + 1;
       const promo = promotions.find(p => p.weekNumber === weekNum);
-      const heroProduct = promo ? productMap.get(promo.heroSku) : undefined;
-      const extraSkus = (promo?.secondarySkus || []).filter(s => s && s !== promo?.heroSku);
-      const totalSkusCount = (promo?.heroSku ? 1 : 0) + extraSkus.length;
+      const isGapWeek = Boolean(promo?.isPromoSkipped);
+      const heroProduct = !isGapWeek && promo ? productMap.get(promo.heroSku) : undefined;
+      const extraSkus = isGapWeek ? [] : (promo?.secondarySkus || []).filter(s => s && s !== promo?.heroSku);
+      const totalSkusCount = isGapWeek ? 0 : (promo?.heroSku ? 1 : 0) + extraSkus.length;
       const extraSkuNames = extraSkus
         .map(s => productMap.get(s)?.name || s)
         .filter(Boolean);
 
       const margin = promo?.projectedMarginPercent || 0;
-      const hasClash = Boolean(promo?.clashWarnings && promo.clashWarnings.length > 0);
+      const hasClash = !isGapWeek && Boolean(promo?.clashWarnings && promo.clashWarnings.length > 0);
 
-      let cardType: 'emerald' | 'amber' | 'crimson' = 'emerald';
-      if (hasClash || margin < 25) {
+      let cardType: 'emerald' | 'amber' | 'crimson' | 'slate' = 'emerald';
+      if (isGapWeek) {
+        cardType = 'slate';
+      } else if (hasClash || margin < 25) {
         cardType = 'crimson';
       } else if (margin < 40) {
         cardType = 'amber';
       }
 
-      const title = promo?.campaignTheme || promo?.australianEvent || (heroProduct ? heroProduct.name : (promo?.heroSku ? `SKU: ${promo.heroSku}` : `Week ${weekNum} Open`));
+      const title = isGapWeek
+        ? 'Baseline Recovery Week (Gap)'
+        : promo?.campaignTheme || promo?.australianEvent || (heroProduct ? heroProduct.name : (promo?.heroSku ? `SKU: ${promo.heroSku}` : `Week ${weekNum} Open`));
       const skuBadgeText = totalSkusCount > 1 ? `${totalSkusCount} SKUs` : (heroProduct?.sku || promo?.heroSku || '1 SKU');
-      const subtitle = heroProduct
+      const subtitle = isGapWeek
+        ? 'No Promo · RRP Full Margin'
+        : heroProduct
         ? `${skuBadgeText} · ${margin}% GM`
         : (promo?.mechanic?.label ? `${promo.mechanic.label} · ${margin}%` : `Margin: ${margin}%`);
 
       return {
         weekNum,
         promo,
+        isGapWeek,
         heroProduct,
         extraSkuNames,
         totalSkusCount,
@@ -655,63 +664,87 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                           {item.title}
                         </h3>
 
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
-                          <span className="font-semibold text-slate-800 dark:text-slate-100">
-                            {item.totalSkusCount} {item.totalSkusCount === 1 ? 'SKU' : 'SKUs'} on promo:
-                          </span>
-                          <span className="truncate max-w-full">
-                            {item.heroProduct ? item.heroProduct.name : (promo?.heroSku || 'None')}
-                            {item.extraSkuNames.length > 0 && (
-                              <span className="text-slate-500 dark:text-slate-400">
-                                {' '}+ {item.extraSkuNames.slice(0, 2).join(', ')}
-                                {item.extraSkuNames.length > 2 ? ` (+${item.extraSkuNames.length - 2} more)` : ''}
+                        {item.isGapWeek ? (
+                          <div className="text-xs text-slate-500 dark:text-slate-400">
+                            Scheduled non-promo cadence gap · Baseline RRP pricing protects price perception &amp; hiatus rules.
+                          </div>
+                        ) : (
+                          <>
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-600 dark:text-slate-300">
+                              <span className="font-semibold text-slate-800 dark:text-slate-100">
+                                {item.totalSkusCount} {item.totalSkusCount === 1 ? 'SKU' : 'SKUs'} on promo:
                               </span>
-                            )}
-                          </span>
-                        </div>
+                              <span className="truncate max-w-full">
+                                {item.heroProduct ? item.heroProduct.name : (promo?.heroSku || 'None')}
+                                {item.extraSkuNames.length > 0 && (
+                                  <span className="text-slate-500 dark:text-slate-400">
+                                    {' '}+ {item.extraSkuNames.slice(0, 2).join(', ')}
+                                    {item.extraSkuNames.length > 2 ? ` (+${item.extraSkuNames.length - 2} more)` : ''}
+                                  </span>
+                                )}
+                              </span>
+                            </div>
 
-                        <div className="text-xs text-slate-500 dark:text-slate-400">
-                          Offer: <span className="font-semibold text-slate-700 dark:text-slate-200">{promo?.mechanic?.label || '20% Off RRP'}</span>
-                          {promo?.mechanic?.promoRrp ? ` · Hero $${promo.mechanic.promoRrp.toFixed(2)}` : ''}
-                        </div>
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                              <span>
+                                Offer: <span className="font-semibold text-slate-700 dark:text-slate-200">{promo?.mechanic?.label || '20% Off RRP'}</span>
+                                {promo?.mechanic?.promoRrp ? ` · Hero $${promo.mechanic.promoRrp.toFixed(2)}` : ''}
+                              </span>
+                              {promo?.mechanic?.caseDealType && promo.mechanic.caseDealType !== 'none' && (promo.mechanic.caseDealValue || 0) > 0 && (
+                                <span className="font-semibold text-emerald-600 dark:text-emerald-400">
+                                  · Case Deal Active ({promo.mechanic.caseDealType === 'percent_off_cost' ? `-${promo.mechanic.caseDealValue}% COGS` : `-$${promo.mechanic.caseDealValue}`})
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
                       </div>
 
                       {/* Right: Tabular Financials, Semantic Audit & Direct Edit Button */}
                       <div className="flex flex-wrap sm:flex-nowrap items-center justify-between lg:justify-end gap-4 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-slate-800">
-                        <div className="flex items-center gap-4 tabular-nums">
-                          <div>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Revenue</span>
-                            <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
-                              {formatAud(rev)}
+                        {item.isGapWeek ? (
+                          <div className="flex items-center gap-4">
+                            <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                              <span>Gap Week · Baseline</span>
                             </span>
                           </div>
-                          <div>
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Margin</span>
-                            <span className={`font-mono font-black text-sm ${
-                              item.margin >= 40
-                                ? 'text-emerald-600 dark:text-emerald-400'
-                                : item.margin >= 25
-                                ? 'text-amber-600 dark:text-amber-400'
-                                : 'text-rose-600 dark:text-rose-400'
-                            }`}>
-                              {item.margin}%
-                            </span>
-                          </div>
-                          <div className="min-w-[82px]">
-                            <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Status</span>
-                            {clashCount > 0 ? (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400">
-                                <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                                <span>{clashCount} Clash</span>
+                        ) : (
+                          <div className="flex items-center gap-4 tabular-nums">
+                            <div>
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Revenue</span>
+                              <span className="font-mono font-black text-sm text-slate-900 dark:text-white">
+                                {formatAud(rev)}
                               </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
-                                <span>Compliant</span>
+                            </div>
+                            <div>
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Margin</span>
+                              <span className={`font-mono font-black text-sm ${
+                                item.margin >= 40
+                                  ? 'text-emerald-600 dark:text-emerald-400'
+                                  : item.margin >= 25
+                                  ? 'text-amber-600 dark:text-amber-400'
+                                  : 'text-rose-600 dark:text-rose-400'
+                              }`}>
+                                {item.margin}%
                               </span>
-                            )}
+                            </div>
+                            <div className="min-w-[82px]">
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400 block">Status</span>
+                              {clashCount > 0 ? (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-rose-600 dark:text-rose-400">
+                                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                                  <span>{clashCount} Clash</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                  <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
+                                  <span>Compliant</span>
+                                </span>
+                              )}
+                            </div>
                           </div>
-                        </div>
+                        )}
 
                         <button
                           type="button"
@@ -767,7 +800,9 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                   .map((item) => {
                   const isSelected = activeReslotWeek === item.weekNum;
                   
-                  const cardBg = item.cardType === 'emerald'
+                  const cardBg = item.cardType === 'slate'
+                    ? 'bg-slate-200/80 text-slate-700 border-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700'
+                    : item.cardType === 'emerald'
                     ? 'bg-[#7fc29b] text-emerald-950 border-[#6eb38a]'
                     : item.cardType === 'amber'
                     ? 'bg-[#fed085] text-amber-950 border-[#edbf74]'
@@ -813,7 +848,14 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     return true;
                   })
                   .map((item) => {
-                  const statusDot = item.cardType === 'emerald' ? 'bg-emerald-500' : item.cardType === 'amber' ? 'bg-amber-500' : 'bg-rose-500';
+                  const statusDot =
+                    item.cardType === 'slate'
+                      ? 'bg-slate-400'
+                      : item.cardType === 'emerald'
+                      ? 'bg-emerald-500'
+                      : item.cardType === 'amber'
+                      ? 'bg-amber-500'
+                      : 'bg-rose-500';
                   return (
                     <button
                       key={item.weekNum}
@@ -976,9 +1018,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {promotions.map((promo) => {
                 const isSelected = selectedWeekNum === promo.weekNumber;
-                const hero = productMap.get(promo.heroSku);
+                const isGapWeek = Boolean(promo.isPromoSkipped);
+                const hero = !isGapWeek ? productMap.get(promo.heroSku) : undefined;
                 const margin = promo.projectedMarginPercent || 0;
-                const hasClash = promo.clashWarnings.length > 0;
+                const hasClash = !isGapWeek && promo.clashWarnings.length > 0;
 
                 return (
                   <div
@@ -987,6 +1030,10 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     className={`p-4 rounded-2xl border transition-all cursor-pointer shadow-xs ${
                       isSelected 
                         ? 'border-indigo-500 bg-indigo-50/20 dark:bg-indigo-950/40 ring-2 ring-indigo-500' 
+                        : isGapWeek
+                        ? isLight
+                          ? 'bg-slate-50 border-slate-200 hover:border-slate-300'
+                          : 'bg-slate-900/60 border-slate-800 hover:border-slate-700'
                         : isLight 
                         ? 'bg-white border-slate-200 hover:border-slate-300' 
                         : 'bg-slate-900 border-slate-800 hover:border-slate-700'
@@ -996,7 +1043,11 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                       <span className="font-mono text-xs font-black text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950 px-2 py-0.5 rounded-md">
                         Week {promo.weekNumber}
                       </span>
-                      {hasClash ? (
+                      {isGapWeek ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded-md border border-slate-200 dark:border-slate-700">
+                          Gap Week
+                        </span>
+                      ) : hasClash ? (
                         <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 dark:bg-rose-950/80 px-2 py-0.5 rounded-md border border-rose-200 dark:border-rose-800">
                           <AlertTriangle className="w-3 h-3" />
                           Clash
@@ -1010,23 +1061,25 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                     </div>
 
                     <h4 className="font-bold text-xs text-slate-900 dark:text-white line-clamp-1">
-                      {promo.campaignTheme}
+                      {isGapWeek ? 'Baseline Recovery Week' : promo.campaignTheme}
                     </h4>
                     <p className="text-[11px] text-slate-500 dark:text-slate-400 font-mono mt-0.5 truncate">
-                      {1 + (promo.secondarySkus?.length || 0)} {(1 + (promo.secondarySkus?.length || 0)) === 1 ? 'SKU' : 'SKUs'} · {promo.heroSku} {hero?.name ? `(${hero.name})` : ''}
+                      {isGapWeek
+                        ? 'Regular RRP · Full Margin Window'
+                        : `${1 + (promo.secondarySkus?.length || 0)} ${(1 + (promo.secondarySkus?.length || 0)) === 1 ? 'SKU' : 'SKUs'} · ${promo.heroSku} ${hero?.name ? `(${hero.name})` : ''}`}
                     </p>
 
                     <div className="mt-3 pt-3 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between text-xs">
                       <div>
                         <span className="text-slate-400 text-[10px] block">Promo RRP</span>
                         <span className="font-black text-slate-900 dark:text-white font-mono">
-                          ${(promo.mechanic?.promoRrp || 0).toFixed(2)}
+                          {isGapWeek ? 'Baseline' : `$${(promo.mechanic?.promoRrp || 0).toFixed(2)}`}
                         </span>
                       </div>
                       <div className="text-right">
                         <span className="text-slate-400 text-[10px] block">Margin</span>
-                        <span className={`font-black font-mono ${margin >= 40 ? 'text-emerald-600' : margin >= 25 ? 'text-amber-600' : 'text-rose-600'}`}>
-                          {margin}%
+                        <span className={`font-black font-mono ${isGapWeek ? 'text-slate-500' : margin >= 40 ? 'text-emerald-600' : margin >= 25 ? 'text-amber-600' : 'text-rose-600'}`}>
+                          {isGapWeek ? 'Full RRP' : `${margin}%`}
                         </span>
                       </div>
                     </div>
@@ -1084,7 +1137,8 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                   {promotions.map((promo) => {
-                    const totalSkus = 1 + (promo.secondarySkus?.length || 0);
+                    const isGapWeek = Boolean(promo.isPromoSkipped);
+                    const totalSkus = isGapWeek ? 0 : 1 + (promo.secondarySkus?.length || 0);
                     return (
                     <tr 
                       key={promo.weekNumber}
@@ -1095,27 +1149,33 @@ export const CalendarView: React.FC<CalendarViewProps> = ({
                         W{promo.weekNumber}
                       </td>
                       <td className="py-3 px-4">
-                        <div className="font-bold text-slate-900 dark:text-white">{promo.campaignTheme}</div>
+                        <div className="font-bold text-slate-900 dark:text-white">
+                          {isGapWeek ? 'Baseline Recovery Week (Gap)' : promo.campaignTheme}
+                        </div>
                         <div className="text-[11px] font-mono text-slate-500 dark:text-slate-400">
-                          {totalSkus} {totalSkus === 1 ? 'SKU' : 'SKUs'} · Hero {promo.heroSku}
+                          {isGapWeek
+                            ? 'Regular RRP · No active promo'
+                            : `${totalSkus} ${totalSkus === 1 ? 'SKU' : 'SKUs'} · Hero ${promo.heroSku}`}
                         </div>
                       </td>
                       <td className="py-3 px-4 font-mono text-emerald-600">
-                        ${(promo.mechanic?.promoRrp || 0).toFixed(2)}
+                        {isGapWeek ? 'RRP' : `$${(promo.mechanic?.promoRrp || 0).toFixed(2)}`}
                       </td>
                       <td className="py-3 px-4 font-mono text-amber-600">
-                        ${(promo.mechanic?.supplierFundingPerUnit || 0.5).toFixed(2)}/u
+                        {isGapWeek ? '—' : `$${(promo.mechanic?.supplierFundingPerUnit || 0).toFixed(2)}/u`}
                       </td>
                       <td className="py-3 px-4 font-mono font-bold">
-                        {formatAud(promo.projectedRevenueAud)}
+                        {isGapWeek ? 'Baseline' : formatAud(promo.projectedRevenueAud)}
                       </td>
                       <td className="py-3 px-4 font-mono font-bold">
-                        <span className={promo.projectedMarginPercent >= 40 ? 'text-emerald-600' : 'text-amber-600'}>
-                          {promo.projectedMarginPercent}%
+                        <span className={isGapWeek ? 'text-slate-500' : promo.projectedMarginPercent >= 40 ? 'text-emerald-600' : 'text-amber-600'}>
+                          {isGapWeek ? 'Full RRP' : `${promo.projectedMarginPercent}%`}
                         </span>
                       </td>
                       <td className="py-3 px-4">
-                        {promo.clashWarnings.length > 0 ? (
+                        {isGapWeek ? (
+                          <span className="text-slate-500 font-bold text-[10px]">Gap</span>
+                        ) : promo.clashWarnings.length > 0 ? (
                           <span className="text-rose-600 font-bold text-[10px]">Clash</span>
                         ) : (
                           <span className="text-emerald-600 font-bold text-[10px]">OK</span>

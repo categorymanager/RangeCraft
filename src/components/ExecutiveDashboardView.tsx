@@ -27,6 +27,8 @@ import {
 import { AppTab, Product, StrategyKPIs, ThemeMode, UserProfile, WeekPromotion } from '../types';
 import { formatAud, formatNumber } from '../utils/formatters';
 import { buildSkuPromoDemandMap, computeSkuInventoryForecast } from '../utils/inventoryForecast';
+import { findNextClashFreeWeek } from '../utils/promoPlannerEngine';
+import { trackEvent } from '../utils/analytics';
 
 interface ExecutiveDashboardViewProps {
   user: UserProfile | null;
@@ -39,6 +41,7 @@ interface ExecutiveDashboardViewProps {
   onOpenUploadModal: () => void;
   onOpenAddProductModal: () => void;
   onAutoFormulatePlan: () => void;
+  onOpenPromotionBuilderWithConfig?: (config: { sku: string; weekNumber?: number; discountPercent?: number }) => void;
 }
 
 const GENERIC_CHANNELS = [
@@ -62,6 +65,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
   onOpenUploadModal,
   onOpenAddProductModal,
   onAutoFormulatePlan,
+  onOpenPromotionBuilderWithConfig,
 }) => {
   const isLight = currentTheme.includes('light');
   const [timeframeFilter, setTimeframeFilter] = useState<'all' | 'H1' | 'H2'>('all');
@@ -85,7 +89,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
   }, [promotions, timeframeFilter]);
 
   const activePromos = useMemo(
-    () => filteredPromos.filter((p) => Boolean(p.heroSku) && productMap.has(p.heroSku)),
+    () => filteredPromos.filter((p) => !p.isPromoSkipped && Boolean(p.heroSku) && productMap.has(p.heroSku)),
     [filteredPromos, productMap]
   );
 
@@ -198,6 +202,10 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
   const insights = useMemo(() => {
     const list: Array<{
       id: string;
+      category: 'risk' | 'stockout' | 'conflict' | 'recovery' | 'healthy';
+      sku?: string;
+      weekNumber?: number;
+      impactAud: number;
       kind: 'Margin Risk Alert' | 'Stockout Risk Alert' | 'Profit Recovery Opportunity' | 'Promotion Clash' | 'Revenue Impact Analysis';
       tone: 'red' | 'amber' | 'blue' | 'green';
       headline: string;
@@ -212,15 +220,30 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
       const hero = productMap.get(lowMarginPromo.heroSku);
       const gapPct = Math.max(2, Math.round(28 - (lowMarginPromo.projectedMarginPercent || 20)));
       const estRecovery = Math.round(((lowMarginPromo.projectedRevenueAud || 18000) * gapPct) / 100);
+      const suggestedDiscount = Math.max(10, (lowMarginPromo.mechanic?.discountValue || 25) - 5);
       list.push({
         id: `risk-w${lowMarginPromo.weekNumber}`,
+        category: 'risk',
+        sku: lowMarginPromo.heroSku,
+        weekNumber: lowMarginPromo.weekNumber,
+        impactAud: estRecovery,
         kind: 'Margin Risk Alert',
         tone: 'red',
         headline: `${hero?.name || lowMarginPromo.heroSku} projected below target margin`,
-        detail: `Week ${lowMarginPromo.weekNumber} runs at ${lowMarginPromo.projectedMarginPercent}% gross margin. Reduce discount depth by 5% or add scan co-op.`,
+        detail: `Week ${lowMarginPromo.weekNumber} runs at ${lowMarginPromo.projectedMarginPercent}% gross margin. Reduce discount depth by 5% or add case deal / scan co-op.`,
         impactLabel: `Potential recovery: +${formatAud(estRecovery)}`,
         actionLabel: 'Fix in Promotion Builder',
-        onAction: () => onSelectTab('promotion-builder'),
+        onAction: () => {
+          if (onOpenPromotionBuilderWithConfig && lowMarginPromo.heroSku) {
+            onOpenPromotionBuilderWithConfig({
+              sku: lowMarginPromo.heroSku,
+              weekNumber: lowMarginPromo.weekNumber,
+              discountPercent: suggestedDiscount,
+            });
+          } else {
+            onSelectTab('promotion-builder');
+          }
+        },
       });
     }
 
@@ -232,6 +255,9 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
       const inv = computeSkuInventoryForecast(stockoutSku, skuPromoDemandMap.get(stockoutSku.sku));
       list.push({
         id: `stockout-${stockoutSku.sku}`,
+        category: 'stockout',
+        sku: stockoutSku.sku,
+        impactAud: 0,
         kind: 'Stockout Risk Alert',
         tone: 'red',
         headline: `${stockoutSku.name} inventory threatens promotional supply`,
@@ -252,6 +278,10 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
     if (clashPromo) {
       list.push({
         id: `clash-w${clashPromo.weekNumber}`,
+        category: 'conflict',
+        sku: clashPromo.heroSku,
+        weekNumber: clashPromo.weekNumber,
+        impactAud: Math.round(clashPromo.projectedMarginAud || 0),
         kind: 'Promotion Clash',
         tone: 'amber',
         headline: `Rule spacing conflict detected in Week ${clashPromo.weekNumber}`,
@@ -262,24 +292,43 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
       });
     }
 
-    const highMarginCandidate = products.find((p) => p.marginPercent >= 45 && !activePromos.some((a) => a.heroSku === p.sku));
+    const highMarginCandidate = products.find(
+      (p) => p.marginPercent >= 45 && !activePromos.some((a) => a.heroSku === p.sku || (a.secondarySkus || []).includes(p.sku))
+    );
     if (highMarginCandidate) {
+      const targetWeek = findNextClashFreeWeek(highMarginCandidate, promotions, products);
       const potentialRev = Math.round(highMarginCandidate.weeklyUnitsBaseline * highMarginCandidate.rrp * 1.45);
       list.push({
         id: `unscheduled-${highMarginCandidate.sku}`,
+        category: 'recovery',
+        sku: highMarginCandidate.sku,
+        weekNumber: targetWeek,
+        impactAud: potentialRev,
         kind: 'Profit Recovery Opportunity',
         tone: 'green',
         headline: `${highMarginCandidate.name} has unscheduled high-margin capacity`,
-        detail: `${highMarginCandidate.marginPercent}% baseline margin with zero scheduled feature weeks.`,
+        detail: `${highMarginCandidate.marginPercent}% baseline margin with zero scheduled feature weeks. Suggested clash-free slot: Week ${targetWeek}.`,
         impactLabel: `Revenue upside: +${formatAud(potentialRev)}`,
-        actionLabel: 'Schedule Promotion',
-        onAction: () => onSelectTab('promotion-builder'),
+        actionLabel: `Schedule in Week ${targetWeek}`,
+        onAction: () => {
+          if (onOpenPromotionBuilderWithConfig) {
+            onOpenPromotionBuilderWithConfig({
+              sku: highMarginCandidate.sku,
+              weekNumber: targetWeek,
+              discountPercent: 20,
+            });
+          } else {
+            onSelectTab('promotion-builder');
+          }
+        },
       });
     }
 
     if (list.length === 0 && hasData) {
       list.push({
         id: 'healthy-portfolio',
+        category: 'healthy',
+        impactAud: Math.round(kpis.totalGrossProfitAud || 0),
         kind: 'Revenue Impact Analysis',
         tone: 'blue',
         headline: 'Active promotional schedule meets margin guardrails',
@@ -291,7 +340,19 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
     }
 
     return list.slice(0, 3);
-  }, [activePromos, products, productMap, skuPromoDemandMap, kpis, hasData, onSelectTab]);
+  }, [activePromos, products, promotions, productMap, skuPromoDemandMap, kpis, hasData, onSelectTab, onOpenPromotionBuilderWithConfig]);
+
+  const handleDashboardInsightClick = (ins: (typeof insights)[number]) => {
+    trackEvent('insight_action_clicked', {
+      source: 'executive_dashboard',
+      insight_id: ins.id,
+      category: ins.category,
+      sku: ins.sku || '',
+      week_number: ins.weekNumber ?? 0,
+      impact_aud: ins.impactAud,
+    });
+    ins.onAction();
+  };
 
   const firstName = user?.firstName || user?.displayName?.split(' ')[0] || 'there';
 
@@ -305,6 +366,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
 
   return (
     <div className="space-y-6 pb-12">
+      <div className="h-1.5 w-full rounded-full bg-gradient-to-r from-[#2563EB] via-[#10B981] to-[#F59E0B]" />
       {/* Executive Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
         <div>
@@ -803,7 +865,7 @@ export const ExecutiveDashboardView: React.FC<ExecutiveDashboardViewProps> = ({
                   </p>
                   <button
                     type="button"
-                    onClick={ins.onAction}
+                    onClick={() => handleDashboardInsightClick(ins)}
                     className="mt-2.5 text-xs font-semibold text-[#2563EB] hover:underline inline-flex items-center gap-1 cursor-pointer"
                   >
                     <span>{ins.actionLabel}</span>

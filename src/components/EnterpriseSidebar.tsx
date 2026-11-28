@@ -15,6 +15,8 @@ import {
   LogOut,
   Zap,
   HelpCircle,
+  Lock,
+  ScanBarcode,
 } from 'lucide-react';
 import { AppTab, UserProfile } from '../types';
 import { RangeCraftLogo } from './RangeCraftLogo';
@@ -29,6 +31,7 @@ interface EnterpriseSidebarProps {
   onLogout: () => void;
   skusAtRiskCount?: number;
   clashCount?: number;
+  productsCount?: number;
 }
 
 export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
@@ -40,8 +43,10 @@ export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
   onLogout,
   skusAtRiskCount = 0,
   clashCount = 0,
+  productsCount = 0,
 }) => {
   const trialEligible = canClaimFreeTrial(user);
+  const isRangeLocked = productsCount === 0;
 
   const mainNav: Array<{
     id: AppTab;
@@ -53,6 +58,7 @@ export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, matchTabs: ['dashboard', 'directory'] },
     { id: 'promotion-builder', label: 'Promotions', icon: SlidersHorizontal, matchTabs: ['promotion-builder', 'week-studio', 'commercial-journey'] },
     { id: 'catalog', label: 'Products', icon: Package, matchTabs: ['catalog', 'deletion-engine'] },
+    { id: 'scan-order', label: 'Scan & Order', icon: ScanBarcode },
     { id: 'calendar', label: 'Retail Calendar', icon: CalendarDays },
     { id: 'breakeven-basket', label: 'Margin Simulator', icon: Calculator },
     { id: 'analytics', label: 'Trade Spend', icon: TrendingUp },
@@ -112,22 +118,28 @@ export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
           {mainNav.map((item) => {
             const Icon = item.icon;
             const active = isNavActive(item);
+            const itemLocked = isRangeLocked && item.id !== 'catalog' && item.id !== 'scan-order';
             return (
               <button
                 key={item.id}
                 type="button"
                 onClick={() => onSelectTab(item.id)}
+                title={itemLocked ? 'Upload or add at least 1 SKU in Products to unlock' : item.label}
                 className={`w-full min-h-[40px] px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-between gap-2.5 transition-colors cursor-pointer whitespace-nowrap ${
                   active
                     ? 'bg-[#2563EB] text-white font-semibold shadow-sm'
+                    : itemLocked
+                    ? 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-300'
                     : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
                 }`}
               >
                 <span className="flex items-center gap-3 min-w-0">
-                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
+                  <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : itemLocked ? 'text-slate-500' : 'text-slate-400'}`} />
                   <span className="truncate">{item.label}</span>
                 </span>
-                {item.badge !== undefined && item.badge > 0 && (
+                {itemLocked ? (
+                  <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                ) : item.badge !== undefined && item.badge > 0 ? (
                   <span
                     className={`text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded ${
                       active ? 'bg-white/20 text-white' : 'bg-amber-500/20 text-amber-300'
@@ -135,7 +147,7 @@ export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
                   >
                     {item.badge}
                   </span>
-                )}
+                ) : null}
               </button>
             );
           })}
@@ -149,22 +161,28 @@ export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
             {orgNav.map((item) => {
               const Icon = item.icon;
               const active = isNavActive(item);
+              const itemLocked = isRangeLocked && item.id !== 'billing';
               return (
                 <button
                   key={item.id}
                   type="button"
                   onClick={() => onSelectTab(item.id)}
+                  title={itemLocked ? 'Upload or add at least 1 SKU in Products to unlock' : item.label}
                   className={`w-full min-h-[40px] px-3 py-2 rounded-lg text-sm font-medium flex items-center justify-between gap-2.5 transition-colors cursor-pointer whitespace-nowrap ${
                     active
                       ? 'bg-[#2563EB] text-white font-semibold shadow-sm'
+                      : itemLocked
+                      ? 'text-slate-500 hover:bg-slate-800/40 hover:text-slate-300'
                       : 'text-slate-300 hover:bg-slate-800/70 hover:text-white'
                   }`}
                 >
                   <span className="flex items-center gap-3 min-w-0">
-                    <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
+                    <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-white' : itemLocked ? 'text-slate-500' : 'text-slate-400'}`} />
                     <span className="truncate">{item.label}</span>
                   </span>
-                  {item.badge !== undefined && item.badge > 0 && (
+                  {itemLocked ? (
+                    <Lock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                  ) : item.badge !== undefined && item.badge > 0 ? (
                     <span
                       className={`text-[11px] font-semibold tabular-nums px-1.5 py-0.5 rounded ${
                         active ? 'bg-white/20 text-white' : 'bg-red-500/20 text-red-300'
@@ -172,7 +190,7 @@ export const EnterpriseSidebar: React.FC<EnterpriseSidebarProps> = ({
                     >
                       {item.badge}
                     </span>
-                  )}
+                  ) : null}
                 </button>
               );
             })}

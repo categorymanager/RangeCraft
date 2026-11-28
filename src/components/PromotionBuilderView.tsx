@@ -13,8 +13,9 @@ import {
   Check,
   X,
 } from 'lucide-react';
-import { AppTab, MechanicType, Product, ThemeMode, WeekPromotion } from '../types';
+import { AppTab, CaseDealType, MechanicType, Product, ThemeMode, WeekPromotion } from '../types';
 import { formatAud, formatNumber } from '../utils/formatters';
+import { calculateCaseDealUnitSavings } from '../utils/promoPlannerEngine';
 import {
   buildSkuPromoDemandMap,
   computeSkuInventoryForecast,
@@ -35,6 +36,7 @@ interface PromotionBuilderViewProps {
     sku?: string;
     weekNumber?: number;
     discountPercent?: number;
+    triggeredAt?: number;
   } | null;
 }
 
@@ -83,6 +85,8 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
   const [tradeSpendTotal, setTradeSpendTotal] = useState<number>(1500);
   const [otherCostsPerUnit, setOtherCostsPerUnit] = useState<number>(0.45);
   const [targetMarginFloor, setTargetMarginFloor] = useState<number>(25);
+  const [caseDealType, setCaseDealType] = useState<CaseDealType>('none');
+  const [caseDealValue, setCaseDealValue] = useState<number>(0);
 
   useEffect(() => {
     if (preloadedConfig) {
@@ -95,6 +99,8 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
       if (preloadedConfig.discountPercent !== undefined) {
         setDiscountPercent(preloadedConfig.discountPercent);
       }
+      // Always jump straight to Step 3 (Promotion Mechanics) when launched from an Insight CTA
+      setStep(3);
     }
   }, [preloadedConfig, products]);
 
@@ -134,7 +140,9 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
         : ''
     );
     setIsEditingCatalogStock(false);
-  }, [activeProduct.sku, activeProduct.stockLevel]);
+    setCaseDealType(activeProduct.defaultCaseDealType || 'none');
+    setCaseDealValue(activeProduct.defaultCaseDealValue || 0);
+  }, [activeProduct.sku, activeProduct.stockLevel, activeProduct.defaultCaseDealType, activeProduct.defaultCaseDealValue]);
 
   const activeChannel = useMemo(
     () => GENERIC_CHANNELS.find((c) => c.id === channelId) || GENERIC_CHANNELS[0],
@@ -146,7 +154,7 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
     [promotions, targetWeek]
   );
 
-  // Live Waterfall & Forecast Engine
+  // Live Waterfall & Forecast Engine (Case Deal reduces unit COGS before profit calculation)
   const calc = useMemo(() => {
     const rrp = Math.max(0.01, activeProduct.rrp);
     const discountDollar = Number((rrp * (discountPercent / 100)).toFixed(2));
@@ -159,9 +167,13 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
     );
     const revenueForecast = Number((unitsForecast * shelfPrice).toFixed(2));
 
+    const caseDealUnitSavings = calculateCaseDealUnitSavings(activeProduct, caseDealType, caseDealValue);
+    const effectiveUnitCost = Number(Math.max(0.01, activeProduct.cost - caseDealUnitSavings).toFixed(2));
+    const caseDealSavingsTotalAud = Number((unitsForecast * caseDealUnitSavings).toFixed(2));
+
     const tradeSpendPerUnit = Number((tradeSpendTotal / Math.max(1, unitsForecast)).toFixed(2));
     const totalUnitCostAndDeductions = Number(
-      (activeProduct.cost + scanRebatePerUnit + tradeSpendPerUnit + otherCostsPerUnit).toFixed(2)
+      (effectiveUnitCost + scanRebatePerUnit + tradeSpendPerUnit + otherCostsPerUnit).toFixed(2)
     );
 
     const netProfitPerUnit = Number((shelfPrice - totalUnitCostAndDeductions).toFixed(2));
@@ -172,6 +184,7 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
     const minGap = activeProduct.minPromoGapWeeks || 4;
     const clashingWeeks = promotions.filter(
       (p) =>
+        !p.isPromoSkipped &&
         p.weekNumber !== targetWeek &&
         Math.abs(p.weekNumber - targetWeek) <= minGap &&
         (p.heroSku === activeProduct.sku || (p.secondarySkus || []).includes(activeProduct.sku))
@@ -195,6 +208,9 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
       shelfPrice,
       unitsForecast,
       revenueForecast,
+      caseDealUnitSavings,
+      effectiveUnitCost,
+      caseDealSavingsTotalAud,
       tradeSpendPerUnit,
       netProfitPerUnit,
       netMarginPct,
@@ -207,6 +223,8 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
     activeProduct,
     activeChannel,
     discountPercent,
+    caseDealType,
+    caseDealValue,
     scanRebatePerUnit,
     tradeSpendTotal,
     otherCostsPerUnit,
@@ -265,8 +283,16 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
     const base = selectedWeekObj;
     if (!base) return;
 
+    const nextSkuCaseDeals = { ...(base.skuCaseDeals || {}) };
+    if (caseDealType !== 'none' && caseDealValue > 0) {
+      nextSkuCaseDeals[activeProduct.sku] = { type: caseDealType, value: caseDealValue };
+    } else {
+      delete nextSkuCaseDeals[activeProduct.sku];
+    }
+
     const updated: WeekPromotion = {
       ...base,
+      isPromoSkipped: false,
       heroSku: activeProduct.sku,
       campaignTheme: `${activeChannel.name}: ${activeProduct.name} (${discountPercent}% Off)`,
       mechanic: {
@@ -280,7 +306,10 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
             ? `Bundle Save ${discountPercent}%`
             : `${discountPercent}% Off RRP`,
         supplierFundingPerUnit: scanRebatePerUnit,
+        caseDealType,
+        caseDealValue: caseDealType === 'none' ? 0 : caseDealValue,
       },
+      skuCaseDeals: Object.keys(nextSkuCaseDeals).length > 0 ? nextSkuCaseDeals : undefined,
       projectedUnits: calc.unitsForecast,
       projectedRevenueAud: calc.revenueForecast,
       projectedMarginPercent: calc.netMarginPct,
@@ -299,6 +328,8 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
     setTradeSpendTotal(1500);
     setOtherCostsPerUnit(0.45);
     setTargetMarginFloor(25);
+    setCaseDealType('none');
+    setCaseDealValue(0);
   };
 
   const cardClass = isLight
@@ -718,6 +749,65 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
                   />
                 </div>
               </div>
+
+              {/* Promotional Case Deal ($ or % Cost Reduction) */}
+              <div
+                className={`p-3.5 rounded-xl border space-y-2.5 ${
+                  isLight ? 'bg-emerald-50/70 border-emerald-200' : 'bg-emerald-950/20 border-emerald-800/50'
+                }`}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-xs font-bold ${isLight ? 'text-emerald-900' : 'text-emerald-300'}`}>
+                    Promotional Case Deal ($ or % Cost Reduction)
+                  </span>
+                  {calc.caseDealUnitSavings > 0 && (
+                    <span className="text-[11px] font-bold font-mono tabular-nums text-[#10B981]">
+                      -${calc.caseDealUnitSavings.toFixed(2)}/unit COGS
+                    </span>
+                  )}
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      Case Deal Type
+                    </label>
+                    <select
+                      value={caseDealType}
+                      onChange={(e) => {
+                        const nextType = e.target.value as CaseDealType;
+                        setCaseDealType(nextType);
+                        if (nextType === 'none') setCaseDealValue(0);
+                      }}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs font-medium ${
+                        isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+                      }`}
+                    >
+                      <option value="none">No Case Deal</option>
+                      <option value="dollar_off_unit">$ Off Per Unit</option>
+                      <option value="dollar_off_case">
+                        $ Off Per Carton ({activeProduct.unitsPerCarton || 12} u/ctn)
+                      </option>
+                      <option value="percent_off_cost">% Off Unit Cost</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                      {caseDealType === 'percent_off_cost' ? 'Discount (%)' : 'Allowance ($ AUD)'}
+                    </label>
+                    <input
+                      type="number"
+                      step="0.1"
+                      min={0}
+                      disabled={caseDealType === 'none'}
+                      value={caseDealType === 'none' ? 0 : caseDealValue}
+                      onChange={(e) => setCaseDealValue(Math.max(0, Number(e.target.value) || 0))}
+                      className={`w-full px-3 py-2 rounded-lg border text-xs tabular-nums disabled:opacity-50 ${
+                        isLight ? 'bg-white border-slate-300 text-slate-900' : 'bg-slate-900 border-slate-700 text-white'
+                      }`}
+                    />
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
@@ -1029,10 +1119,10 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
               />
               <div
                 style={{
-                  width: `${Math.min(100, ((calc.tradeSpendPerUnit + otherCostsPerUnit + activeProduct.cost) / calc.rrp) * 100)}%`,
+                  width: `${Math.min(100, ((calc.tradeSpendPerUnit + otherCostsPerUnit + calc.effectiveUnitCost) / calc.rrp) * 100)}%`,
                 }}
                 className="bg-slate-400"
-                title="Trade Spend + COGS + Other Costs"
+                title="Trade Spend + Net COGS + Other Costs"
               />
               <div
                 style={{ width: `${Math.max(0, (calc.netProfitPerUnit / calc.rrp) * 100)}%` }}
@@ -1040,6 +1130,17 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
                 title={`Net Take Home $${calc.netProfitPerUnit.toFixed(2)}`}
               />
             </div>
+
+            {calc.caseDealSavingsTotalAud > 0 && (
+              <div className="p-2.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-between text-xs tabular-nums">
+                <span className="font-semibold text-[#10B981]">
+                  Case Deal Cost Reduction Active (-${calc.caseDealUnitSavings.toFixed(2)}/unit)
+                </span>
+                <span className="font-bold text-[#10B981]">
+                  Total Savings: +{formatAud(calc.caseDealSavingsTotalAud)} profit lift
+                </span>
+              </div>
+            )}
 
             {/* Detailed Per-Unit Step Breakdown */}
             <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5 pt-1 text-xs tabular-nums">
@@ -1062,9 +1163,11 @@ export const PromotionBuilderView: React.FC<PromotionBuilderViewProps> = ({
                 </span>
               </div>
               <div className="p-2.5 rounded-lg border border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] text-slate-500 block">COGS &amp; Other</span>
+                <span className="text-[11px] text-slate-500 block">
+                  {calc.caseDealUnitSavings > 0 ? 'Net COGS & Other' : 'COGS & Other'}
+                </span>
                 <span className="font-bold text-sm text-slate-600 dark:text-slate-300">
-                  -${(activeProduct.cost + otherCostsPerUnit).toFixed(2)}
+                  -${(calc.effectiveUnitCost + otherCostsPerUnit).toFixed(2)}
                 </span>
               </div>
               <div className="p-2.5 rounded-lg border border-emerald-200 dark:border-emerald-800 bg-emerald-500/5">

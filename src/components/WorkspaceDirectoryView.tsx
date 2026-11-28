@@ -17,6 +17,7 @@ import {
   BarChart3,
   FileText,
   SlidersHorizontal,
+  ScanBarcode,
 } from 'lucide-react';
 
 interface WorkspaceDirectoryViewProps {
@@ -75,7 +76,7 @@ export const WorkspaceDirectoryView: React.FC<WorkspaceDirectoryViewProps> = ({
     userProfile?.subscriptionTier === 'enterprise_tier'
       ? 'Enterprise'
       : userProfile?.subscriptionTier === 'pro_planner'
-      ? 'Pro Plan'
+      ? 'Growth Plan'
       : userProfile?.subscriptionTier === 'starter_plan'
       ? 'Starter Plan'
       : 'Free Forever';
@@ -168,6 +169,15 @@ export const WorkspaceDirectoryView: React.FC<WorkspaceDirectoryViewProps> = ({
       icon: ShoppingCart,
       iconTint: isLight ? 'text-amber-600' : 'text-amber-400',
       onActivate: () => onNavigateTab('wholesale'),
+    },
+    {
+      id: 'scan-order',
+      title: 'Scan & Order (PO Builder)',
+      description: 'Scan aisle barcodes, auto-split orders by supplier, and export Australian A4 POs.',
+      meta: 'Mobile Barcode Terminal',
+      icon: ScanBarcode,
+      iconTint: isLight ? 'text-blue-600' : 'text-blue-400',
+      onActivate: () => onNavigateTab('scan-order'),
     },
   ];
 

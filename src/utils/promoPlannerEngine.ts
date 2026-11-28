@@ -1,4 +1,17 @@
-import { Product, WeekPromotion, ClashReport, StrategyKPIs, QuarterlySummary, PromoMechanic, CataloguePlacement, StrategicObjective, MechanicType } from '../types';
+import {
+  Product,
+  WeekPromotion,
+  ClashReport,
+  StrategyKPIs,
+  QuarterlySummary,
+  PromoMechanic,
+  CataloguePlacement,
+  StrategicObjective,
+  MechanicType,
+  CaseDealType,
+  SchedulePreferences,
+  AiParsedConstraints
+} from '../types';
 import { AUSTRALIAN_52_WEEKS, AustralianWeekEvent } from '../data/calendarEvents';
 
 // -------------------------------------------------------------
@@ -6,7 +19,34 @@ import { AUSTRALIAN_52_WEEKS, AustralianWeekEvent } from '../data/calendarEvents
 // -------------------------------------------------------------
 
 /**
- * Calculates exact commercial financials, volume elasticity, margin $, margin %, and trade spend funding
+ * Calculates the per-unit cost reduction from a promotional Case Deal ($ or %)
+ */
+export function calculateCaseDealUnitSavings(
+  product: Product,
+  dealType?: CaseDealType,
+  dealValue?: number
+): number {
+  const effectiveType: CaseDealType = dealType ?? product.defaultCaseDealType ?? 'none';
+  const rawValue = dealValue !== undefined ? dealValue : (product.defaultCaseDealValue ?? 0);
+  const val = Number.isFinite(rawValue) ? Math.max(0, rawValue) : 0;
+
+  if (effectiveType === 'none' || val <= 0) return 0;
+
+  let perUnitSavings = 0;
+  if (effectiveType === 'dollar_off_unit') {
+    perUnitSavings = val;
+  } else if (effectiveType === 'dollar_off_case') {
+    const unitsPerCarton = Math.max(1, product.unitsPerCarton || 12);
+    perUnitSavings = val / unitsPerCarton;
+  } else if (effectiveType === 'percent_off_cost') {
+    perUnitSavings = product.cost * (Math.min(95, val) / 100);
+  }
+
+  return Number(Math.max(0, Math.min(Math.max(0, product.cost - 0.01), perUnitSavings)).toFixed(4));
+}
+
+/**
+ * Calculates exact commercial financials, volume elasticity, margin $, margin %, case deal deductions, and trade spend funding
  */
 export function calculateMechanicFinancials(
   product: Product,
@@ -67,14 +107,23 @@ export function calculateMechanicFinancials(
 
   const projectedUnits = Math.max(1, Math.round(baselineUnits * liftMultiplier));
   const projectedRevenueAud = Number((projectedUnits * promoRrp).toFixed(2));
-  
+
+  // Promotional unit cost reduction via Case Deal ($ or %)
+  const caseDealSavingsPerUnit = calculateCaseDealUnitSavings(
+    product,
+    mechanic.caseDealType,
+    mechanic.caseDealValue
+  );
+  const effectiveUnitCost = Number(Math.max(0.01, product.cost - caseDealSavingsPerUnit).toFixed(4));
+  const caseDealSavingsTotalAud = Number((projectedUnits * caseDealSavingsPerUnit).toFixed(2));
+
   // Cost accounting & Supplier Co-Op Scan Rebate
-  const totalCogs = projectedUnits * product.cost;
+  const totalCogs = projectedUnits * effectiveUnitCost;
   const supplierFundingTotal = Number(((mechanic.supplierFundingPerUnit || 0) * projectedUnits).toFixed(2));
   const netCogs = Math.max(0, totalCogs - supplierFundingTotal);
   const projectedMarginAud = Number((projectedRevenueAud - netCogs).toFixed(2));
-  const projectedMarginPercent = projectedRevenueAud > 0 
-    ? Number(((projectedMarginAud / projectedRevenueAud) * 100).toFixed(1)) 
+  const projectedMarginPercent = projectedRevenueAud > 0
+    ? Number(((projectedMarginAud / projectedRevenueAud) * 100).toFixed(1))
     : 0;
 
   return {
@@ -84,7 +133,10 @@ export function calculateMechanicFinancials(
     projectedRevenueAud,
     projectedMarginAud,
     projectedMarginPercent,
-    tradeSpendAud: supplierFundingTotal
+    tradeSpendAud: supplierFundingTotal,
+    caseDealSavingsPerUnit: Number(caseDealSavingsPerUnit.toFixed(2)),
+    caseDealSavingsTotalAud,
+    effectiveUnitCost: Number(effectiveUnitCost.toFixed(2))
   };
 }
 
@@ -96,6 +148,8 @@ export interface SkuFinancialBreakdown {
   regularRrp: number;
   promoRrp: number;
   cost: number;
+  effectiveUnitCost: number;
+  caseDealSavingsAud: number;
   projectedUnits: number;
   projectedRevenueAud: number;
   projectedMarginAud: number;
@@ -111,22 +165,29 @@ export interface MultiSkuWeekFinancials {
   projectedMarginAud: number;
   projectedMarginPercent: number;
   tradeSpendAud: number;
+  caseDealSavingsTotalAud: number;
   totalSkusCount: number;
   skuBreakdown: SkuFinancialBreakdown[];
 }
 
 /**
  * Computes combined promotional financials for 1 Hero SKU + any number of supporting SKUs
- * (minimum 1 SKU up to entire catalog) sharing the week's promotional mechanic.
+ * (minimum 1 SKU up to entire catalog) sharing the week's promotional mechanic and per-SKU case deals.
  */
 export function calculateWeekMultiSkuFinancials(
   heroProduct: Product,
   secondaryProducts: Product[],
   mechanic: PromoMechanic,
-  isMajorEvent: boolean
+  isMajorEvent: boolean,
+  skuCaseDeals?: Record<string, { type: CaseDealType; value: number }>
 ): MultiSkuWeekFinancials {
+  const heroOverride = skuCaseDeals?.[heroProduct.sku];
+  const heroMechanic: PromoMechanic = heroOverride
+    ? { ...mechanic, caseDealType: heroOverride.type, caseDealValue: heroOverride.value }
+    : mechanic;
+
   const heroBaseline = Math.max(1, heroProduct.weeklyUnitsBaseline || 50);
-  const heroFin = calculateMechanicFinancials(heroProduct, mechanic, heroBaseline, isMajorEvent);
+  const heroFin = calculateMechanicFinancials(heroProduct, heroMechanic, heroBaseline, isMajorEvent);
 
   const uniqueSecondaries: Product[] = [];
   const seen = new Set<string>([heroProduct.sku]);
@@ -146,6 +207,8 @@ export function calculateWeekMultiSkuFinancials(
       regularRrp: heroProduct.rrp,
       promoRrp: heroFin.promoRrp,
       cost: heroProduct.cost,
+      effectiveUnitCost: heroFin.effectiveUnitCost,
+      caseDealSavingsAud: heroFin.caseDealSavingsTotalAud,
       projectedUnits: heroFin.projectedUnits,
       projectedRevenueAud: heroFin.projectedRevenueAud,
       projectedMarginAud: heroFin.projectedMarginAud,
@@ -158,17 +221,24 @@ export function calculateWeekMultiSkuFinancials(
   let totalRevenue = heroFin.projectedRevenueAud;
   let totalMarginAud = heroFin.projectedMarginAud;
   let totalTradeSpend = heroFin.tradeSpendAud;
+  let totalCaseDealSavings = heroFin.caseDealSavingsTotalAud;
 
   const heroDiscountRatio = heroProduct.rrp > 0 && heroFin.promoRrp > 0
     ? Math.max(0.25, Math.min(0.95, heroFin.promoRrp / heroProduct.rrp))
     : 0.8;
 
   for (const secProd of uniqueSecondaries) {
-    let secMechanic: PromoMechanic = mechanic;
+    const secOverride = skuCaseDeals?.[secProd.sku];
+    let secMechanic: PromoMechanic = {
+      ...mechanic,
+      caseDealType: secOverride ? secOverride.type : secProd.defaultCaseDealType,
+      caseDealValue: secOverride ? secOverride.value : secProd.defaultCaseDealValue,
+    };
+
     if (mechanic.type === 'price_drop') {
       const equivPct = Math.max(5, Math.min(75, Number(((1 - heroDiscountRatio) * 100).toFixed(1))));
       secMechanic = {
-        ...mechanic,
+        ...secMechanic,
         type: 'percentage_off',
         discountValue: equivPct,
         promoRrp: Number((secProd.rrp * heroDiscountRatio).toFixed(2)),
@@ -176,7 +246,7 @@ export function calculateWeekMultiSkuFinancials(
     } else if (mechanic.type === 'multi_buy') {
       const packSize = mechanic.discountValue > 0 && mechanic.discountValue <= 6 ? mechanic.discountValue : 2;
       secMechanic = {
-        ...mechanic,
+        ...secMechanic,
         promoRrp: Number((secProd.rrp * packSize * heroDiscountRatio).toFixed(2)),
       };
     }
@@ -188,6 +258,7 @@ export function calculateWeekMultiSkuFinancials(
     totalRevenue += secFin.projectedRevenueAud;
     totalMarginAud += secFin.projectedMarginAud;
     totalTradeSpend += secFin.tradeSpendAud;
+    totalCaseDealSavings += secFin.caseDealSavingsTotalAud;
 
     skuBreakdown.push({
       sku: secProd.sku,
@@ -197,6 +268,8 @@ export function calculateWeekMultiSkuFinancials(
       regularRrp: secProd.rrp,
       promoRrp: secFin.promoRrp,
       cost: secProd.cost,
+      effectiveUnitCost: secFin.effectiveUnitCost,
+      caseDealSavingsAud: secFin.caseDealSavingsTotalAud,
       projectedUnits: secFin.projectedUnits,
       projectedRevenueAud: secFin.projectedRevenueAud,
       projectedMarginAud: secFin.projectedMarginAud,
@@ -208,6 +281,7 @@ export function calculateWeekMultiSkuFinancials(
   const roundedRev = Number(totalRevenue.toFixed(2));
   const roundedMargin = Number(totalMarginAud.toFixed(2));
   const roundedTrade = Number(totalTradeSpend.toFixed(2));
+  const roundedCaseSavings = Number(totalCaseDealSavings.toFixed(2));
   const blendedMarginPct = roundedRev > 0 ? Number(((roundedMargin / roundedRev) * 100).toFixed(1)) : 0;
 
   return {
@@ -218,6 +292,7 @@ export function calculateWeekMultiSkuFinancials(
     projectedMarginAud: roundedMargin,
     projectedMarginPercent: blendedMarginPct,
     tradeSpendAud: roundedTrade,
+    caseDealSavingsTotalAud: roundedCaseSavings,
     totalSkusCount: skuBreakdown.length,
     skuBreakdown,
   };
@@ -694,6 +769,7 @@ export function autoReslotAndFixClashes(
       endDate: weekMeta.endDate,
       australianEvent: weekMeta.eventName,
       isMajorRetailMoment: weekMeta.isMajorRetailMoment,
+      isPromoSkipped: false,
       campaignTheme,
       strategicObjective: existingPromo?.strategicObjective || rec.objective,
       heroSku: hero.sku,
@@ -734,6 +810,7 @@ export function generateDefault52WeekPlan(products: Product[]): WeekPromotion[] 
     endDate: w.endDate,
     australianEvent: w.eventName,
     isMajorRetailMoment: w.isMajorRetailMoment,
+    isPromoSkipped: false,
     campaignTheme: w.defaultTheme,
     strategicObjective: w.isMajorRetailMoment ? 'event_hero' : 'margin_builder',
     heroSku: '',
@@ -756,8 +833,353 @@ export function generateDefault52WeekPlan(products: Product[]): WeekPromotion[] 
     isAiGenerated: false
   }));
 
+  if (!products || products.length === 0) {
+    return initialSkeleton;
+  }
+
   const res = autoReslotAndFixClashes(initialSkeleton, products);
   return res.repairedPromotions;
+}
+
+/**
+ * Finds the next available clash-free week for a target SKU given existing 52-week promotions
+ */
+export function findNextClashFreeWeek(
+  product: Product,
+  promotions: WeekPromotion[],
+  allProducts: Product[]
+): number {
+  const productMap = new Map<string, Product>();
+  allProducts.forEach(p => productMap.set(p.sku, p));
+
+  const requiredGap = Math.max(2, product.minPromoGapWeeks || 4);
+  const candidateWeeks = Array.from({ length: 52 }, (_, i) => i + 1);
+
+  const scoredWeeks: { week: number; score: number }[] = [];
+
+  for (const wNum of candidateWeeks) {
+    const promo = promotions.find(p => p.weekNumber === wNum);
+    // Avoid overwriting already pinned/hiatus-conflicting placements if another slot exists
+    const isHiatusConflict = promotions.some(p => {
+      if (p.isPromoSkipped || !p.heroSku) return false;
+      const usesSku = p.heroSku === product.sku || (p.secondarySkus || []).includes(product.sku);
+      return usesSku && Math.abs(p.weekNumber - wNum) < requiredGap;
+    });
+    if (isHiatusConflict) continue;
+
+    if (!isProductSeasonallyAppropriate(product, wNum)) continue;
+
+    const existingWeekSkus = promo && !promo.isPromoSkipped
+      ? [promo.heroSku, ...(promo.secondarySkus || [])].map(s => productMap.get(s)).filter(Boolean) as Product[]
+      : [];
+
+    const hasSubcatConflict = existingWeekSkus.some(
+      ep => ep.sku !== product.sku && ep.subcategory.toLowerCase() === product.subcategory.toLowerCase()
+    );
+    const hasBrandConflict = Boolean(
+      product.supplierBrand &&
+      existingWeekSkus.some(
+        ep => ep.sku !== product.sku && ep.supplierBrand && ep.supplierBrand.toLowerCase() === product.supplierBrand!.toLowerCase()
+      )
+    );
+    const hasVariantConflict = Boolean(
+      product.variantGroup &&
+      existingWeekSkus.some(
+        ep => ep.sku !== product.sku && ep.variantGroup && ep.variantGroup.toLowerCase() === product.variantGroup!.toLowerCase()
+      )
+    );
+
+    if (hasSubcatConflict || hasBrandConflict || hasVariantConflict) continue;
+
+    let score = 100 - wNum * 0.25; // Prefer earlier upcoming weeks
+    if (promo?.isPromoSkipped) score += 20;
+    if (product.targetWeeks?.includes(wNum)) score += 35;
+    if (promo?.isMajorRetailMoment && product.performanceTier === 'tier1_hero') score += 25;
+
+    scoredWeeks.push({ week: wNum, score });
+  }
+
+  if (scoredWeeks.length > 0) {
+    scoredWeeks.sort((a, b) => b.score - a.score);
+    return scoredWeeks[0].week;
+  }
+
+  return (product.targetWeeks && product.targetWeeks[0]) || 4;
+}
+
+/**
+ * Generates an optimal 52-week promotional calendar honoring custom user rules, cadence gaps,
+ * cannibalization & brand/variant clash avoidance, case deals, and optional AI-parsed prompt directives.
+ * When called with zero/default preferences, maximizes profit & revenue automatically.
+ */
+export function generateOptimalScheduleWithPreferences(
+  products: Product[],
+  preferences?: Partial<SchedulePreferences>,
+  aiDirectives?: AiParsedConstraints
+): { promotions: WeekPromotion[]; summaryRationale: string } {
+  if (!products || products.length === 0) {
+    return {
+      promotions: generateDefault52WeekPlan([]),
+      summaryRationale: 'Add at least one SKU to formulate your 52-week promotional schedule.'
+    };
+  }
+
+  const preventCategoryCannibalization =
+    aiDirectives?.preventCategoryCannibalization ?? preferences?.preventCategoryCannibalization ?? false;
+  const preventSubcategoryCannibalization =
+    aiDirectives?.preventSubcategoryCannibalization ?? preferences?.preventSubcategoryCannibalization ?? true;
+  const preventBrandSupplierClash =
+    aiDirectives?.preventBrandSupplierClash ?? preferences?.preventBrandSupplierClash ?? true;
+  const preventVariantClash =
+    aiDirectives?.preventVariantClash ?? preferences?.preventVariantClash ?? true;
+
+  const cadenceMode =
+    aiDirectives?.preferredCadenceMode ?? preferences?.cadenceMode ?? 'every_week';
+  const gapIntervalWeeks = Math.max(
+    1,
+    Math.min(8, aiDirectives?.gapIntervalWeeks ?? preferences?.gapIntervalWeeks ?? 3)
+  );
+  const minHiatusWeeks = Math.max(
+    2,
+    Math.min(12, aiDirectives?.minHiatusWeeks ?? preferences?.minHiatusWeeks ?? 4)
+  );
+  const maxPromosPerSkuPerYear = Math.max(
+    1,
+    Math.min(26, aiDirectives?.maxPromosPerSkuPerYear ?? preferences?.maxPromosPerSkuPerYear ?? 14)
+  );
+  const strategicObjective =
+    aiDirectives?.strategicObjective ?? preferences?.strategicObjective ?? 'balanced_growth';
+
+  const excludedWeeksSet = new Set<number>(aiDirectives?.excludedWeeks || []);
+  const pinnedMap = new Map<number, string>();
+  (aiDirectives?.pinnedWeeks || []).forEach((pin) => {
+    if (pin.weekNumber >= 1 && pin.weekNumber <= 52 && pin.sku) {
+      pinnedMap.set(pin.weekNumber, pin.sku);
+    }
+  });
+
+  const productMap = new Map<string, Product>();
+  products.forEach(p => productMap.set(p.sku, p));
+
+  const skuUsageWeeks: Record<string, number[]> = {};
+  const lastMechanicUsed: Record<string, MechanicType> = {};
+  products.forEach(p => { skuUsageWeeks[p.sku] = []; });
+
+  const promotions: WeekPromotion[] = [];
+  let activePromoRunCounter = 0;
+
+  for (let idx = 0; idx < 52; idx++) {
+    const wNum = idx + 1;
+    const weekMeta: AustralianWeekEvent = AUSTRALIAN_52_WEEKS[idx] || {
+      weekNumber: wNum,
+      quarter: wNum <= 13 ? 'Q1' : wNum <= 26 ? 'Q2' : wNum <= 39 ? 'Q3' : 'Q4',
+      month: 'Month',
+      startDate: '',
+      endDate: '',
+      eventName: '',
+      isMajorRetailMoment: false,
+      defaultTheme: `Week ${wNum} Promotional Feature`,
+      seasonalContext: '',
+      targetCategoryAffinities: [],
+      keyShopperDrivers: []
+    };
+
+    // Determine if this week should be a Gap / Baseline Recovery Week
+    const isExplicitlyExcluded = excludedWeeksSet.has(wNum);
+    let isCadenceGapWeek = false;
+    if (cadenceMode === 'with_gaps' && !pinnedMap.has(wNum)) {
+      if (activePromoRunCounter >= gapIntervalWeeks && !weekMeta.isMajorRetailMoment) {
+        isCadenceGapWeek = true;
+      }
+    }
+
+    if (isExplicitlyExcluded || isCadenceGapWeek) {
+      activePromoRunCounter = 0;
+      promotions.push({
+        weekNumber: wNum,
+        quarter: weekMeta.quarter as 'Q1' | 'Q2' | 'Q3' | 'Q4',
+        month: weekMeta.month,
+        startDate: weekMeta.startDate,
+        endDate: weekMeta.endDate,
+        australianEvent: weekMeta.eventName,
+        isMajorRetailMoment: weekMeta.isMajorRetailMoment,
+        isPromoSkipped: true,
+        campaignTheme: 'Regular Price / Baseline Recovery Week',
+        strategicObjective: 'margin_builder',
+        heroSku: '',
+        secondarySkus: [],
+        mechanic: {
+          type: 'percentage_off',
+          discountValue: 0,
+          promoRrp: 0,
+          label: 'No Active Promo (Gap Week)',
+          supplierFundingPerUnit: 0
+        },
+        cataloguePlacement: 'digital_app',
+        activeChannels: [],
+        projectedUnits: 0,
+        projectedRevenueAud: 0,
+        projectedMarginPercent: 0,
+        projectedMarginAud: 0,
+        tradeSpendAud: 0,
+        clashWarnings: [],
+        isAiGenerated: true
+      });
+      continue;
+    }
+
+    activePromoRunCounter++;
+
+    // Pick profit-maximizing hero SKU satisfying hiatus & custom constraints
+    const pinnedSku = pinnedMap.get(wNum);
+    let hero: Product | undefined = pinnedSku ? productMap.get(pinnedSku) : undefined;
+
+    if (!hero) {
+      const eligibleHeroes = products.filter(p => {
+        const uses = skuUsageWeeks[p.sku] || [];
+        if (uses.length >= maxPromosPerSkuPerYear) return false;
+        const requiredGap = Math.max(minHiatusWeeks, p.minPromoGapWeeks || 4);
+        const hiatusSafe = uses.every(pastW => Math.abs(wNum - pastW) >= requiredGap);
+        return hiatusSafe && isProductSeasonallyAppropriate(p, wNum);
+      });
+
+      const pool = eligibleHeroes.length > 0
+        ? eligibleHeroes
+        : [...products].sort((a, b) => (skuUsageWeeks[a.sku]?.length || 0) - (skuUsageWeeks[b.sku]?.length || 0));
+
+      const targetAffinities = (weekMeta.targetCategoryAffinities || []).map(a => a.toLowerCase());
+
+      const scoredPool = pool.map(p => {
+        const tentativeRec = determineOptimalMechanicForSku(p, weekMeta, lastMechanicUsed[p.sku], true);
+        const tentativeFin = calculateMechanicFinancials(p, tentativeRec.mechanic, p.weeklyUnitsBaseline || 50, weekMeta.isMajorRetailMoment);
+
+        let score = 0;
+        // Profit & Revenue impact weighting based on strategicObjective
+        if (strategicObjective === 'margin_protection') {
+          score += tentativeFin.projectedMarginPercent * 2.4 + tentativeFin.projectedMarginAud * 0.015;
+        } else if (strategicObjective === 'volume_maximization') {
+          score += tentativeFin.projectedRevenueAud * 0.018 + tentativeFin.projectedUnits * 0.25;
+        } else {
+          score += tentativeFin.projectedMarginAud * 0.02 + tentativeFin.projectedMarginPercent * 1.4;
+        }
+
+        // Case deal bonus profit lift
+        if (tentativeFin.caseDealSavingsTotalAud > 0) {
+          score += 22;
+        }
+
+        if (p.targetWeeks?.includes(wNum)) score += 60;
+        const sub = (p.subcategory || '').toLowerCase();
+        const cat = (p.category || '').toLowerCase();
+        if (targetAffinities.some(aff => sub.includes(aff) || cat.includes(aff))) score += 40;
+        if (weekMeta.isMajorRetailMoment && p.performanceTier === 'tier1_hero') score += 35;
+
+        // Fairness / rotation balance across catalog
+        score -= (skuUsageWeeks[p.sku]?.length || 0) * 28;
+        return { p, score };
+      });
+
+      scoredPool.sort((a, b) => b.score - a.score);
+      hero = scoredPool[0]?.p || products[0];
+    }
+
+    skuUsageWeeks[hero.sku].push(wNum);
+
+    // Pick supporting basket-builder SKUs obeying category, subcategory, supplier/brand & variant guards
+    const secondaries: Product[] = [];
+    const usedSubcats = new Set<string>([hero.subcategory.toLowerCase()]);
+    const usedCats = new Set<string>([hero.category.toLowerCase()]);
+    const usedBrands = new Set<string>(hero.supplierBrand ? [hero.supplierBrand.toLowerCase()] : []);
+    const usedVariants = new Set<string>(hero.variantGroup ? [hero.variantGroup.toLowerCase()] : []);
+
+    const secCandidates = products.filter(p => {
+      if (p.sku === hero!.sku) return false;
+      const uses = skuUsageWeeks[p.sku] || [];
+      if (uses.length >= maxPromosPerSkuPerYear) return false;
+      const requiredGap = Math.max(minHiatusWeeks, p.minPromoGapWeeks || 4);
+      if (!uses.every(pastW => Math.abs(wNum - pastW) >= requiredGap)) return false;
+      if (!isProductSeasonallyAppropriate(p, wNum)) return false;
+      if (preventSubcategoryCannibalization && usedSubcats.has(p.subcategory.toLowerCase())) return false;
+      if (preventCategoryCannibalization && usedCats.has(p.category.toLowerCase())) return false;
+      if (preventBrandSupplierClash && p.supplierBrand && usedBrands.has(p.supplierBrand.toLowerCase())) return false;
+      if (preventVariantClash && p.variantGroup && usedVariants.has(p.variantGroup.toLowerCase())) return false;
+      return true;
+    }).sort((a, b) => (skuUsageWeeks[a.sku]?.length || 0) - (skuUsageWeeks[b.sku]?.length || 0));
+
+    const maxSecondaries = products.length >= 8 ? 3 : products.length >= 4 ? 2 : 1;
+    for (const cand of secCandidates) {
+      if (secondaries.length >= maxSecondaries) break;
+      if (preventSubcategoryCannibalization && usedSubcats.has(cand.subcategory.toLowerCase())) continue;
+      if (preventCategoryCannibalization && usedCats.has(cand.category.toLowerCase())) continue;
+      if (preventBrandSupplierClash && cand.supplierBrand && usedBrands.has(cand.supplierBrand.toLowerCase())) continue;
+      if (preventVariantClash && cand.variantGroup && usedVariants.has(cand.variantGroup.toLowerCase())) continue;
+
+      secondaries.push(cand);
+      skuUsageWeeks[cand.sku].push(wNum);
+      usedSubcats.add(cand.subcategory.toLowerCase());
+      usedCats.add(cand.category.toLowerCase());
+      if (cand.supplierBrand) usedBrands.add(cand.supplierBrand.toLowerCase());
+      if (cand.variantGroup) usedVariants.add(cand.variantGroup.toLowerCase());
+    }
+
+    const rec = determineOptimalMechanicForSku(hero, weekMeta, lastMechanicUsed[hero.sku], true);
+    if (strategicObjective === 'margin_protection' && rec.mechanic.type === 'percentage_off' && rec.mechanic.discountValue > 25) {
+      rec.mechanic.discountValue = 20;
+      rec.mechanic.promoRrp = Number((hero.rrp * 0.8).toFixed(2));
+      rec.mechanic.label = '20% Off Special';
+    }
+    if (hero.defaultCaseDealType && hero.defaultCaseDealType !== 'none' && hero.defaultCaseDealValue) {
+      rec.mechanic.caseDealType = hero.defaultCaseDealType;
+      rec.mechanic.caseDealValue = hero.defaultCaseDealValue;
+    }
+
+    lastMechanicUsed[hero.sku] = rec.mechanic.type;
+
+    const fin = calculateWeekMultiSkuFinancials(hero, secondaries, rec.mechanic, weekMeta.isMajorRetailMoment);
+
+    const campaignTheme = weekMeta.eventName
+      ? `${weekMeta.eventName} - ${hero.name.split(' ')[0]} ${rec.themeModifier || 'Feature'}`
+      : `${weekMeta.defaultTheme} - ${rec.themeModifier}`;
+
+    promotions.push({
+      weekNumber: wNum,
+      quarter: weekMeta.quarter as 'Q1' | 'Q2' | 'Q3' | 'Q4',
+      month: weekMeta.month,
+      startDate: weekMeta.startDate,
+      endDate: weekMeta.endDate,
+      australianEvent: weekMeta.eventName,
+      isMajorRetailMoment: weekMeta.isMajorRetailMoment,
+      isPromoSkipped: false,
+      campaignTheme,
+      strategicObjective: rec.objective,
+      heroSku: hero.sku,
+      secondarySkus: secondaries.map(s => s.sku),
+      mechanic: rec.mechanic,
+      cataloguePlacement: rec.placement,
+      activeChannels: rec.channels,
+      projectedUnits: fin.projectedUnits,
+      projectedRevenueAud: fin.projectedRevenueAud,
+      projectedMarginPercent: fin.projectedMarginPercent,
+      projectedMarginAud: fin.projectedMarginAud,
+      tradeSpendAud: fin.tradeSpendAud,
+      clashWarnings: [],
+      isAiGenerated: true
+    });
+  }
+
+  const audited = auditClashes(promotions, products);
+  const activeCount = audited.filter(p => !p.isPromoSkipped).length;
+  const gapCount = audited.length - activeCount;
+
+  const summaryRationale =
+    aiDirectives?.rationale ||
+    `Optimal 52-week schedule built (${activeCount} active promotional weeks${gapCount > 0 ? `, ${gapCount} baseline recovery gap weeks` : ''}) with ${minHiatusWeeks}-week minimum hiatus, ${
+      preventBrandSupplierClash ? 'supplier/brand clash protection, ' : ''
+    }${preventVariantClash ? 'variant guardrails, ' : ''}${
+      preventSubcategoryCannibalization ? 'subcategory cannibalisation prevention, ' : ''
+    }and profit-maximizing mechanics factoring per-SKU case deals.`;
+
+  return { promotions: audited, summaryRationale };
 }
 
 // -------------------------------------------------------------
@@ -768,9 +1190,13 @@ export function auditClashes(promotions: WeekPromotion[], products: Product[]): 
   const getProduct = (sku: string) => products.find(p => p.sku === sku);
 
   return promotions.map((promo, idx) => {
+    if (promo.isPromoSkipped || !promo.heroSku) {
+      return { ...promo, clashWarnings: [] };
+    }
+
     const clashes: ClashReport[] = [];
     const heroProduct = getProduct(promo.heroSku);
-    const secondaryProds = promo.secondarySkus.map(getProduct).filter(Boolean) as Product[];
+    const secondaryProds = (promo.secondarySkus || []).map(getProduct).filter(Boolean) as Product[];
     const allWeekProds = [heroProduct, ...secondaryProds].filter(Boolean) as Product[];
 
     if (!heroProduct) return { ...promo, clashWarnings: [] };
@@ -795,12 +1221,54 @@ export function auditClashes(promotions: WeekPromotion[], products: Product[]): 
       }
     }
 
+    // 1b. Supplier / Brand Clash Check
+    const brandCounts: { [brand: string]: string[] } = {};
+    for (const p of allWeekProds) {
+      const brand = (p.supplierBrand || '').trim();
+      if (!brand) continue;
+      if (!brandCounts[brand]) brandCounts[brand] = [];
+      brandCounts[brand].push(p.sku);
+    }
+    for (const [brand, skus] of Object.entries(brandCounts)) {
+      if (skus.length > 1) {
+        clashes.push({
+          id: `brand-clash-w${promo.weekNumber}-${brand}`,
+          weekNumber: promo.weekNumber,
+          type: 'supplier_brand_clash',
+          severity: 'warning',
+          message: `Supplier / brand overlap: Multiple '${brand}' SKUs featured together in Week ${promo.weekNumber} (${skus.join(', ')}).`,
+          affectedSkus: skus
+        });
+      }
+    }
+
+    // 1c. Product Variant Overlap Check
+    const variantCounts: { [v: string]: string[] } = {};
+    for (const p of allWeekProds) {
+      const vg = (p.variantGroup || '').trim();
+      if (!vg) continue;
+      if (!variantCounts[vg]) variantCounts[vg] = [];
+      variantCounts[vg].push(p.sku);
+    }
+    for (const [vg, skus] of Object.entries(variantCounts)) {
+      if (skus.length > 1) {
+        clashes.push({
+          id: `variant-clash-w${promo.weekNumber}-${vg}`,
+          weekNumber: promo.weekNumber,
+          type: 'variant_clash',
+          severity: 'warning',
+          message: `Variant clash: Multiple '${vg}' variants promoted simultaneously in Week ${promo.weekNumber} (${skus.join(', ')}).`,
+          affectedSkus: skus
+        });
+      }
+    }
+
     // 2. Hiatus / Frequency Rule Check (Custom 4-Week Hiatus & Baseline Margin Protection) across all promoted SKUs
     for (const weekProd of allWeekProds) {
       const requiredGap = weekProd.minPromoGapWeeks || 4;
       for (let prevIdx = Math.max(0, idx - requiredGap); prevIdx < idx; prevIdx++) {
         const pastPromo = promotions[prevIdx];
-        if (pastPromo && (pastPromo.heroSku === weekProd.sku || (pastPromo.secondarySkus || []).includes(weekProd.sku))) {
+        if (pastPromo && !pastPromo.isPromoSkipped && (pastPromo.heroSku === weekProd.sku || (pastPromo.secondarySkus || []).includes(weekProd.sku))) {
           const gap = idx - prevIdx;
           const id = `hiatus-clash-w${promo.weekNumber}-${weekProd.sku}`;
           if (!clashes.some(c => c.id === id)) {
@@ -880,6 +1348,7 @@ export function calculateStrategyKPIs(promotions: WeekPromotion[], products: Pro
   const promotedSkusSet = new Set<string>();
 
   for (const promo of promotions) {
+    if (promo.isPromoSkipped || !promo.heroSku) continue;
     annualProjectedRevenueAud += promo.projectedRevenueAud || 0;
     annualProjectedUnits += promo.projectedUnits || 0;
     totalGrossProfitAud += promo.projectedMarginAud || 0;
@@ -1167,6 +1636,7 @@ export function auditAcccCompliance(promotions: WeekPromotion[], products: Produ
 
   const skuPromoWeeks = new Map<string, number[]>();
   promotions.forEach(p => {
+    if (p.isPromoSkipped || !p.heroSku) return;
     const activeWeekSkus = Array.from(new Set([p.heroSku, ...(p.secondarySkus || [])].filter(Boolean)));
     activeWeekSkus.forEach(sku => {
       const arr = skuPromoWeeks.get(sku) || [];

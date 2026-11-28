@@ -36,9 +36,10 @@ export const OnboardingProductPrompt: React.FC<OnboardingProductPromptProps> = (
 }) => {
   const [isDismissed, setIsDismissed] = useState(false);
   const [showInfoModal, setShowInfoModal] = useState(false);
+  const hasProducts = products.length > 0;
 
-  // If user dismissed or already has plenty of custom-managed products and dismissed it
-  if (isDismissed) {
+  // Never collapse into a tiny bar while range is still empty
+  if (isDismissed && hasProducts) {
     return (
       <div className="flex flex-wrap items-center justify-between gap-2 bg-white dark:bg-[#111726] border border-slate-200 dark:border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-600 dark:text-slate-400 shadow-sm">
         <div className="flex flex-wrap items-center gap-2 min-w-0">
@@ -69,29 +70,33 @@ export const OnboardingProductPrompt: React.FC<OnboardingProductPromptProps> = (
 
   return (
     <>
-      <div className="bg-white dark:bg-[#111726] border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm relative overflow-hidden animate-fadeIn">
-        {/* Close / Minimize button */}
-        <button
-          onClick={() => setIsDismissed(true)}
-          aria-label="Minimize onboarding prompt"
-          className="absolute top-2.5 right-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer z-20"
-          title="Minimize onboarding prompt"
-        >
-          <X className="w-4 h-4" />
-        </button>
+      <div className="bg-gradient-to-br from-emerald-50/80 via-white to-blue-50/70 dark:from-[#101c2c] dark:via-[#111726] dark:to-[#0f172a] border border-emerald-200/80 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm relative overflow-hidden animate-fadeIn">
+        {/* Top vibrant gradient bar */}
+        <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-emerald-500 via-[#2563EB] to-amber-500" />
+        {/* Close / Minimize button (only when products exist) */}
+        {hasProducts && (
+          <button
+            onClick={() => setIsDismissed(true)}
+            aria-label="Minimize onboarding prompt"
+            className="absolute top-2.5 right-2.5 min-w-[44px] min-h-[44px] flex items-center justify-center text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer z-20"
+            title="Minimize onboarding prompt"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        )}
 
-        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 sm:gap-5 relative z-10">
+        <div className="flex flex-col xl:flex-row xl:items-center xl:justify-between gap-4 sm:gap-5 relative z-10 pt-1">
           {/* Left Column: Welcome & Value Proposition */}
           <div className="space-y-2 max-w-2xl pr-10 sm:pr-12">
             <div className="flex flex-wrap items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 dark:bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-500/30 text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5">
+              <span className="px-2.5 py-0.5 rounded-lg bg-emerald-100 dark:bg-emerald-500/20 text-emerald-800 dark:text-emerald-300 border border-emerald-300/70 dark:border-emerald-500/30 text-[11px] font-bold uppercase tracking-wider inline-flex items-center gap-1.5">
                 <Sparkles className="w-3 h-3" />
-                Quick Onboarding & Range Setup
+                Step 1 · Range &amp; Case Deal Setup
               </span>
               <button
                 type="button"
                 onClick={() => setShowInfoModal(true)}
-                className="text-[11px] text-emerald-700 dark:text-emerald-400 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
+                className="text-[11px] text-[#2563EB] dark:text-blue-400 hover:underline font-semibold inline-flex items-center gap-1 cursor-pointer"
               >
                 <ShieldCheck className="w-3.5 h-3.5 shrink-0" />
                 <span>100% Mathematical Accuracy</span>
@@ -100,26 +105,26 @@ export const OnboardingProductPrompt: React.FC<OnboardingProductPromptProps> = (
             </div>
 
             <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
-              Start by Adding Your Product Range for Accurate 52-Week Promotional Analysis
+              Load Your Product Range to Unlock Automated 52-Week Schedule &amp; Profit Optimization
             </h2>
 
             <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
-              RangeCraft generates full 52-week retail promo calendars, gross margin waterfalls, breakeven volume lifts, and Custom Rules hiatus audits. Add or import your active product catalog to ground every financial model in your SKU economics:
+              Import your CSV range or add individual SKUs with optional brand/variant tags and promotional case deals ($ or %). Once loaded, customize your promotional rules or let RangeCraft auto-generate your highest-profit schedule.
             </p>
 
             {/* Micro badges highlighting categories supported (hidden on compact mobile) */}
             <div className="hidden sm:flex flex-wrap items-center gap-2 pt-1">
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
-                <Store className="w-3 h-3 text-amber-500 dark:text-amber-400" /> Brick & Mortar Retail
+              <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/90 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
+                <Store className="w-3 h-3 text-amber-500 dark:text-amber-400" /> Brick &amp; Mortar Retail
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
-                <Boxes className="w-3 h-3 text-blue-600 dark:text-blue-400" /> FMCG & Supermarkets
+              <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/90 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
+                <Boxes className="w-3 h-3 text-blue-600 dark:text-blue-400" /> Brand &amp; Variant Clash Guard
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
-                <Layers className="w-3 h-3 text-purple-600 dark:text-purple-400" /> E-Commerce & Marketplaces
+              <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/90 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
+                <Layers className="w-3 h-3 text-purple-600 dark:text-purple-400" /> Optional Promo Gap Weeks
               </span>
-              <span className="text-[10px] px-2 py-0.5 rounded-md bg-slate-50 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
-                <Calculator className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Scan Rebates & Margin Waterfalls
+              <span className="text-[10px] px-2 py-0.5 rounded-md bg-white/90 dark:bg-slate-950 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-800 flex items-center gap-1">
+                <Calculator className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> Per-SKU Case Deals ($ / %)
               </span>
             </div>
           </div>
@@ -130,7 +135,7 @@ export const OnboardingProductPrompt: React.FC<OnboardingProductPromptProps> = (
             <button
               id="btn-onboarding-import-csv"
               onClick={onOpenCsvImportModal}
-              className="min-h-[44px] flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-colors cursor-pointer text-left group"
+              className="min-h-[44px] flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs sm:text-sm shadow-sm transition-all cursor-pointer text-left group"
             >
               <div className="flex items-center gap-2.5 min-w-0">
                 <div className="p-1.5 rounded-lg bg-white/15 shrink-0">
@@ -156,40 +161,27 @@ export const OnboardingProductPrompt: React.FC<OnboardingProductPromptProps> = (
                   <PlusCircle className="w-4 h-4 shrink-0" />
                   <span className="truncate">Add Single SKU</span>
                 </div>
-                <div className="text-[10px] text-slate-900 font-medium truncate">Input RRP, COGS & Baseline</div>
+                <div className="text-[10px] text-slate-900 font-medium truncate">Input RRP, COGS &amp; Case Deal</div>
               </div>
               <ChevronRight className="w-4 h-4 text-slate-900 shrink-0" />
             </button>
 
-            {/* Action 3: Auto-Build (Secondary CTA) */}
-            <button
-              onClick={onOpenAutoBuildModal}
-              className="min-h-[44px] flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-bold text-xs transition-colors cursor-pointer text-left group"
-            >
-              <div className="flex items-center gap-2.5 min-w-0">
-                <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                <div className="min-w-0">
-                  <div className="text-slate-900 dark:text-white font-bold truncate">Auto-Build Promo Plan</div>
-                  <div className="text-[10px] text-blue-700 dark:text-blue-300 font-normal truncate">Generate 52-week calendar</div>
+            {/* Action 3: Auto-Build (Only active when products exist) */}
+            {hasProducts && (
+              <button
+                onClick={onOpenAutoBuildModal}
+                className="min-h-[44px] flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-950/50 hover:bg-blue-100 dark:hover:bg-blue-900/60 text-blue-900 dark:text-blue-200 border border-blue-200 dark:border-blue-800 font-bold text-xs transition-colors cursor-pointer text-left group"
+              >
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <Sparkles className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-slate-900 dark:text-white font-bold truncate">Auto-Build Promo Plan</div>
+                    <div className="text-[10px] text-blue-700 dark:text-blue-300 font-normal truncate">Configure rules &amp; cadence</div>
+                  </div>
                 </div>
-              </div>
-              <ChevronRight className="w-4 h-4 text-blue-500 shrink-0 group-hover:translate-x-0.5 transition-transform" />
-            </button>
-
-            {/* Action 4: Review / Explore Default Portfolio */}
-            <button
-              onClick={() => onNavigateTab('catalog')}
-              className="min-h-[44px] flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-slate-50 dark:bg-slate-950 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 font-semibold text-xs border border-slate-200 dark:border-slate-800 transition-colors cursor-pointer text-left"
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5 text-slate-900 dark:text-amber-300 font-bold">
-                  <Boxes className="w-4 h-4 text-amber-500 dark:text-amber-400 shrink-0" />
-                  <span className="truncate tabular-nums">View Catalog ({products.length})</span>
-                </div>
-                <div className="text-[10px] text-slate-500 dark:text-slate-400 font-normal truncate">Edit active benchmark SKUs</div>
-              </div>
-              <ArrowRight className="w-4 h-4 text-slate-400 shrink-0" />
-            </button>
+                <ChevronRight className="w-4 h-4 text-blue-500 shrink-0 group-hover:translate-x-0.5 transition-transform" />
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -617,7 +617,7 @@ export const PromoReslotterSandbox: React.FC<PromoReslotterSandboxProps> = ({
             </h3>
             <p className="text-xs sm:text-sm text-slate-400">
               {trialEligible
-                ? 'Upload your SKU catalog or test with our pre-built FMCG category templates. Full 14-day Pro access with no credit card required.'
+                ? 'Upload your SKU catalog or test with our pre-built FMCG category templates. Full 14-day Growth access with no credit card required.'
                 : 'Upload your SKU catalog or test with our pre-built FMCG category templates across all 52 weeks.'}
             </p>
           </div>
@@ -632,7 +632,7 @@ export const PromoReslotterSandbox: React.FC<PromoReslotterSandboxProps> = ({
                 {isPaidActive
                   ? 'Manage Billing & Plan'
                   : trialEligible
-                  ? 'Start 14-Day Free Pro Trial'
+                  ? 'Start 14-Day Free Growth Trial'
                   : 'Upgrade Commercial Plan'}
               </span>
             </button>

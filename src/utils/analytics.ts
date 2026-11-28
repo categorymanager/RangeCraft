@@ -43,12 +43,12 @@ export function initAnalytics(): void {
         window.dataLayer?.push(arguments);
       };
       window.gtag('js', new Date());
-      window.gtag('config', GA4_MEASUREMENT_ID, {
-        send_page_view: true,
-        currency: 'AUD',
-        app_name: 'RangeCraft AU'
-      });
     }
+    window.gtag('config', GA4_MEASUREMENT_ID, {
+      send_page_view: true,
+      currency: 'AUD',
+      app_name: 'RangeCraft AU'
+    });
 
     // Inject Google tag script if not already present
     if (!document.getElementById('ga4-script')) {
@@ -140,7 +140,7 @@ export function trackBeginCheckout(
   exportId: string,
   itemName: string,
   priceAud: number,
-  planType: 'single_export' | 'pro_subscription'
+  planType: 'single_export' | 'pro_subscription' | string
 ): void {
   trackEvent('begin_checkout', {
     item_id: exportId,

@@ -24,6 +24,7 @@ import { useActiveCurrency } from '../utils/currency';
 import { 
   trackBeginCheckout, 
   trackPurchaseSuccess, 
+  trackSubscriptionUpgrade,
   trackButtonClick, 
   trackEvent 
 } from '../utils/analytics';
@@ -149,7 +150,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           exportId,
-          itemName: selectedPlan === 'pro_subscription' ? 'RangeCraft Commercial Pro Plan' : itemName,
+          itemName: selectedPlan === 'pro_subscription' ? 'RangeCraft Growth Plan' : itemName,
           priceAud: currentPrice,
           planType: selectedPlan,
           customerEmail: email,
@@ -180,6 +181,9 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
         };
         setInvoiceDetails(inv);
         trackPurchaseSuccess(exportId, itemName, currentPrice, data.sessionId || 'cs_simulated_' + Date.now(), 'stripe_hosted');
+        if (selectedPlan === 'pro_subscription') {
+          trackSubscriptionUpgrade('Growth Plan', currentPrice, 'pro_planner');
+        }
         triggerRealDownload();
         setTimeout(() => {
           onSuccess(exportId, selectedPlan === 'pro_subscription' ? 'pro_planner' : undefined);
@@ -203,7 +207,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           exportId,
-          itemName: selectedPlan === 'pro_subscription' ? 'RangeCraft Commercial Pro Subscription' : itemName,
+          itemName: selectedPlan === 'pro_subscription' ? 'RangeCraft Growth Plan Subscription' : itemName,
           priceAud: currentPrice,
           planType: selectedPlan,
           cardholderName,
@@ -228,6 +232,9 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
         };
         setInvoiceDetails(inv);
         trackPurchaseSuccess(exportId, itemName, currentPrice, data.transactionId || 'tx_au_' + Date.now(), 'stripe_direct_card');
+        if (selectedPlan === 'pro_subscription') {
+          trackSubscriptionUpgrade('Growth Plan', currentPrice, 'pro_planner');
+        }
         
         // Auto trigger real file generation immediately upon purchase
         triggerRealDownload();
@@ -284,7 +291,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                 <Check className="w-3.5 h-3.5" /> Order Completed & Authorized
               </span>
               <h3 className="text-xl font-black text-slate-900">
-                {selectedPlan === 'pro_subscription' ? 'Commercial Pro Subscription Active!' : 'Commercial License Unlocked & Saved!'}
+                {selectedPlan === 'pro_subscription' ? 'Growth Plan Subscription Active!' : 'Commercial License Unlocked & Saved!'}
               </h3>
               <p className="text-xs text-slate-600 mt-1 max-w-md mx-auto">
                 {selectedPlan === 'pro_subscription'
@@ -379,7 +386,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
                 <span className="absolute -top-2.5 right-2 text-[9px] bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-full uppercase shadow-xs flex items-center gap-0.5">
                   <Zap className="w-2.5 h-2.5 fill-slate-950" /> Best Value
                 </span>
-                <div className={selectedPlan === 'pro_subscription' ? 'text-blue-100 text-[11px] font-normal' : 'text-slate-500 text-[11px] font-normal'}>Commercial Pro</div>
+                <div className={selectedPlan === 'pro_subscription' ? 'text-blue-100 text-[11px] font-normal' : 'text-slate-500 text-[11px] font-normal'}>Growth Plan</div>
                 <div className="text-base font-black">{format(proPriceVal)} {currency} <span className="text-[10px] font-normal opacity-80">/ mo inc. GST</span></div>
                 <div className={selectedPlan === 'pro_subscription' ? 'text-blue-100 text-[10px] mt-0.5' : 'text-slate-400 text-[10px] mt-0.5'}>Unlimited all 52 weeks & insights</div>
               </button>
@@ -389,7 +396,7 @@ export const MicroCheckoutModal: React.FC<MicroCheckoutModalProps> = ({
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
               <div className="space-y-1 pr-3">
                 <span className="font-bold text-slate-900 block text-xs sm:text-sm">
-                  {selectedPlan === 'pro_subscription' ? 'Commercial Pro Unlimited Subscription' : itemName}
+                  {selectedPlan === 'pro_subscription' ? 'Growth Plan Unlimited Subscription' : itemName}
                 </span>
                 <span className="text-[11px] text-slate-500 block leading-relaxed">
                   {selectedPlan === 'pro_subscription' 

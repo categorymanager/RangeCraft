@@ -32,6 +32,7 @@ import {
   ShoppingCart,
   LayoutGrid,
   HelpCircle,
+  ScanBarcode,
 } from 'lucide-react';
 
 import { RangeCraftLogo } from './RangeCraftLogo';
@@ -60,6 +61,7 @@ interface HeaderProps {
   isLandingPage?: boolean;
   isSaving?: boolean;
   lastSyncedTime?: string | null;
+  productsCount?: number;
 }
 
 export interface WorkflowStep {
@@ -234,6 +236,13 @@ export const TOOL_SUITES: ToolSuiteGroup[] = [
         icon: ShoppingCart,
       },
       {
+        name: 'Scan & Order',
+        description: 'Mobile barcode scanner & supplier-split PO builder',
+        tab: 'scan-order',
+        badge: 'Scanner',
+        icon: ScanBarcode,
+      },
+      {
         name: 'Breakeven & Basket Simulator',
         description: 'Volume lift modeling and basket drivers',
         tab: 'breakeven-basket',
@@ -296,8 +305,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenEditRange,
   currentTheme,
   onSelectTheme,
+  productsCount = 0,
 }) => {
   const isLight = currentTheme.includes('light');
+  const isRangeLocked = productsCount === 0;
   const { currency, setCurrency } = useActiveCurrency();
 
   const [isSuitesDropdownOpen, setIsSuitesDropdownOpen] = useState(false);
@@ -371,6 +382,7 @@ export const Header: React.FC<HeaderProps> = ({
     { label: 'Promotions', tab: 'promotion-builder' },
     { label: 'Products', tab: 'catalog' },
     { label: 'Calendar', tab: 'calendar' },
+    { label: 'Scan & Order', tab: 'scan-order' },
     { label: 'Insights', tab: 'commercial-insights' },
   ];
 
@@ -608,6 +620,20 @@ export const Header: React.FC<HeaderProps> = ({
                         <div className="pt-3 border-t border-slate-200/80 dark:border-slate-800 space-y-1.5">
                           <button
                             type="button"
+                            onClick={() => navigateTo('scan-order')}
+                            className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-bold transition-colors cursor-pointer ${
+                              isLight ? 'bg-emerald-50 text-emerald-800' : 'bg-emerald-950/50 text-emerald-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2">
+                              <ScanBarcode className="w-4 h-4" />
+                              <span>Scan &amp; Order (PO Builder)</span>
+                            </div>
+                            <ArrowRight className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
                             onClick={() => navigateTo('dashboard')}
                             className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-3 rounded-2xl text-left text-sm font-bold transition-colors cursor-pointer ${
                               isLight ? 'bg-blue-50 text-blue-700' : 'bg-blue-950/60 text-blue-300'
@@ -656,32 +682,40 @@ export const Header: React.FC<HeaderProps> = ({
                           <span>Executive Dashboard</span>
                           <LayoutGrid className="w-4 h-4" />
                         </button>
-                        {primaryLinks.slice(1).map((link) => (
-                          <button
-                            key={link.tab}
-                            type="button"
-                            onClick={() => navigateTo(link.tab)}
-                            className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left text-xs font-bold cursor-pointer ${
-                              activeTab === link.tab
-                                ? 'bg-indigo-600 text-white'
-                                : isLight
-                                ? 'hover:bg-slate-50 text-slate-700 border border-slate-200'
-                                : 'hover:bg-slate-900 text-slate-300 border border-slate-800'
-                            }`}
-                          >
-                            <span>{link.label}</span>
-                            <ArrowRight className="w-3.5 h-3.5 opacity-60" />
-                          </button>
-                        ))}
+                        {primaryLinks.slice(1).map((link) => {
+                          const locked = isRangeLocked && link.tab !== 'catalog' && link.tab !== 'scan-order';
+                          return (
+                            <button
+                              key={link.tab}
+                              type="button"
+                              onClick={() => navigateTo(link.tab)}
+                              className={`w-full min-h-[44px] flex items-center justify-between px-3.5 py-2.5 rounded-2xl text-left text-xs font-bold cursor-pointer ${
+                                activeTab === link.tab
+                                  ? 'bg-indigo-600 text-white'
+                                  : isLight
+                                  ? 'hover:bg-slate-50 text-slate-700 border border-slate-200'
+                                  : 'hover:bg-slate-900 text-slate-300 border border-slate-800'
+                              }`}
+                            >
+                              <span className="flex items-center gap-2">
+                                {link.tab === 'scan-order' && <ScanBarcode className="w-3.5 h-3.5 shrink-0" />}
+                                {locked && <Lock className="w-3.5 h-3.5 text-slate-400 shrink-0" />}
+                                <span>{link.label}</span>
+                              </span>
+                              <ArrowRight className="w-3.5 h-3.5 opacity-60" />
+                            </button>
+                          );
+                        })}
                         <div className="pt-2 space-y-1.5">
                           {TOOL_SUITES.flatMap(s => s.items).map((item) => {
                             const ItemIcon = item.icon;
+                            const locked = isRangeLocked && item.tab !== 'catalog' && item.tab !== 'scan-order';
                             return (
                               <button
                                 key={item.name}
                                 type="button"
                                 onClick={() => navigateTo(item.tab)}
-                                className={`w-full min-h-[42px] flex items-center gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold cursor-pointer ${
+                                className={`w-full min-h-[42px] flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-left text-xs font-semibold cursor-pointer ${
                                   activeTab === item.tab
                                     ? 'bg-indigo-50 text-indigo-700 font-bold'
                                     : isLight
@@ -689,8 +723,11 @@ export const Header: React.FC<HeaderProps> = ({
                                     : 'hover:bg-slate-900 text-slate-400'
                                 }`}
                               >
-                                <ItemIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
-                                <span className="truncate">{item.name}</span>
+                                <span className="flex items-center gap-2.5 min-w-0">
+                                  <ItemIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />
+                                  <span className="truncate">{item.name}</span>
+                                </span>
+                                {locked && <Lock className="w-3 h-3 text-slate-400 shrink-0" />}
                               </button>
                             );
                           })}
@@ -732,7 +769,7 @@ export const Header: React.FC<HeaderProps> = ({
                         {hasActivePaidSubscription(user)
                           ? 'Manage Billing & Plan'
                           : canClaimFreeTrial(user)
-                          ? 'Start 14-Day Pro Trial'
+                          ? 'Start 14-Day Growth Trial'
                           : 'Upgrade Plan'}
                       </span>
                       <ArrowRight className="w-3.5 h-3.5" />
@@ -808,6 +845,18 @@ export const Header: React.FC<HeaderProps> = ({
                   ))}
                   <button
                     type="button"
+                    onClick={() => navigateTo('scan-order')}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      isLight
+                        ? 'text-slate-600 hover:text-[#2563EB] hover:bg-slate-100'
+                        : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                    }`}
+                  >
+                    <ScanBarcode className="w-3.5 h-3.5 shrink-0" />
+                    <span>Scan &amp; Order</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => navigateTo('dashboard')}
                     className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                       isLight
@@ -821,12 +870,14 @@ export const Header: React.FC<HeaderProps> = ({
               ) : (
                 primaryLinks.map((link) => {
                   const isActive = activeTab === link.tab;
+                  const locked = isRangeLocked && link.tab !== 'catalog' && link.tab !== 'scan-order';
                   return (
                     <button
                       key={link.tab}
                       type="button"
                       onClick={() => navigateTo(link.tab)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                      title={locked ? 'Add or import at least 1 SKU first' : link.label}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
                         isActive
                           ? 'bg-[#2563EB] text-white shadow-xs'
                           : isLight
@@ -834,7 +885,9 @@ export const Header: React.FC<HeaderProps> = ({
                           : 'text-slate-300 hover:text-white hover:bg-slate-800'
                       }`}
                     >
-                      {link.label}
+                      {link.tab === 'scan-order' && <ScanBarcode className="w-3.5 h-3.5 shrink-0" />}
+                      {locked && <Lock className={`w-3 h-3 ${isActive ? 'text-white' : 'text-slate-400'}`} />}
+                      <span>{link.label}</span>
                     </button>
                   );
                 })

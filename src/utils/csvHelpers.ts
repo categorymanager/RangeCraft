@@ -1,4 +1,4 @@
-import { Product, WeekPromotion, PerformanceTier } from '../types';
+import { Product, WeekPromotion, PerformanceTier, CaseDealType } from '../types';
 import { normalizeOptionalStock } from './inventoryForecast';
 
 export interface RangePortfolioAnalysis {
@@ -109,7 +109,12 @@ export function exportProductsToCsv(products: Product[]): string {
     'Min Margin %',
     'Max Discount Depth %',
     'Target Volume Lift %',
-    'Inventory On Hand (Optional)'
+    'Inventory On Hand (Optional)',
+    'Supplier / Brand',
+    'Variant Group',
+    'Units Per Carton',
+    'Case Deal Type',
+    'Case Deal Value'
   ];
 
   const rows = products.map(p => [
@@ -130,7 +135,12 @@ export function exportProductsToCsv(products: Product[]): string {
     p.minMarginPercent?.toFixed(1) || '',
     p.maxDiscountDepthPercent?.toFixed(1) || '',
     p.targetVolumeLiftPercent?.toFixed(1) || '',
-    p.stockLevel !== undefined && p.stockLevel !== null ? String(p.stockLevel) : ''
+    p.stockLevel !== undefined && p.stockLevel !== null ? String(p.stockLevel) : '',
+    `"${(p.supplierBrand || '').replace(/"/g, '""')}"`,
+    `"${(p.variantGroup || '').replace(/"/g, '""')}"`,
+    p.unitsPerCarton !== undefined ? String(p.unitsPerCarton) : '12',
+    p.defaultCaseDealType || 'none',
+    p.defaultCaseDealValue !== undefined ? String(p.defaultCaseDealValue) : '0'
   ]);
 
   return [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
@@ -158,7 +168,12 @@ export function generateProductCsvTemplate(): string {
     'Min Margin %',
     'Max Discount Depth %',
     'Target Volume Lift %',
-    'Inventory On Hand (Optional)'
+    'Inventory On Hand (Optional)',
+    'Supplier / Brand',
+    'Variant Group',
+    'Units Per Carton',
+    'Case Deal Type',
+    'Case Deal Value'
   ];
 
   const sampleRows = [
@@ -180,7 +195,12 @@ export function generateProductCsvTemplate(): string {
       '45.0',
       '25.0',
       '15.0',
-      ''
+      '',
+      '"Outback Flame"',
+      '"BBQ Fuel"',
+      '6',
+      'dollar_off_case',
+      '6.00'
     ],
     [
       'SKU-HOM-001',
@@ -200,7 +220,12 @@ export function generateProductCsvTemplate(): string {
       '',
       '',
       '',
-      '850'
+      '850',
+      '"ThermoHome"',
+      '"Oil Heaters"',
+      '2',
+      'percent_off_cost',
+      '8'
     ],
     [
       'SKU-FMC-001',
@@ -220,7 +245,12 @@ export function generateProductCsvTemplate(): string {
       '',
       '',
       '',
-      ''
+      '',
+      '"Kettle Artisans"',
+      '"Kettle Chips 165g"',
+      '18',
+      'percent_off_cost',
+      '10'
     ],
     [
       'SKU-ELE-001',
@@ -240,7 +270,12 @@ export function generateProductCsvTemplate(): string {
       '',
       '',
       '',
-      ''
+      '',
+      '"SoundPulse"',
+      '"Portable Speakers"',
+      '4',
+      'dollar_off_unit',
+      '8.00'
     ],
     [
       'SKU-APP-001',
@@ -260,7 +295,12 @@ export function generateProductCsvTemplate(): string {
       '',
       '',
       '',
-      ''
+      '',
+      '"AlpinePeak"',
+      '"Down Jackets"',
+      '10',
+      'none',
+      '0'
     ],
     [
       'SKU-CLR-001',
@@ -280,7 +320,12 @@ export function generateProductCsvTemplate(): string {
       '',
       '',
       '',
-      ''
+      '',
+      '"Sunseeker"',
+      '"Beach Shelters"',
+      '6',
+      'none',
+      '0'
     ]
   ];
 
@@ -449,12 +494,22 @@ export function sanitizeProducts(products: Product[]): Product[] {
       : [cleanCategory, 'Active Trade'];
 
     const normalizedStock = normalizeOptionalStock(p.stockLevel);
+    const validDealTypes: CaseDealType[] = ['none', 'dollar_off_unit', 'dollar_off_case', 'percent_off_cost'];
+    const dealType = p.defaultCaseDealType && validDealTypes.includes(p.defaultCaseDealType) ? p.defaultCaseDealType : 'none';
+    const dealValue = typeof p.defaultCaseDealValue === 'number' && !isNaN(p.defaultCaseDealValue) ? Math.max(0, p.defaultCaseDealValue) : 0;
+    const unitsPerCarton = typeof p.unitsPerCarton === 'number' && !isNaN(p.unitsPerCarton) && p.unitsPerCarton >= 1 ? Math.round(p.unitsPerCarton) : 12;
+
     const cleaned: Product = {
       ...p,
       sku: finalSku,
       name: cleanName,
       category: cleanCategory,
       subcategory: cleanSubcategory,
+      supplierBrand: p.supplierBrand ? stripHtml(p.supplierBrand).slice(0, 60) : undefined,
+      variantGroup: p.variantGroup ? stripHtml(p.variantGroup).slice(0, 60) : undefined,
+      unitsPerCarton,
+      defaultCaseDealType: dealType,
+      defaultCaseDealValue: dealValue,
       rrp,
       cost,
       marginPercent,
@@ -464,6 +519,9 @@ export function sanitizeProducts(products: Product[]): Product[] {
       seasonalPeak: p.seasonalPeak ? stripHtml(p.seasonalPeak).slice(0, 50) : 'All Year Trade',
       targetWeeks: Array.isArray(p.targetWeeks) && p.targetWeeks.length > 0 ? p.targetWeeks.filter(w => typeof w === 'number' && w >= 1 && w <= 52) : [4, 18, 34, 47],
     };
+
+    if (!cleaned.supplierBrand) delete cleaned.supplierBrand;
+    if (!cleaned.variantGroup) delete cleaned.variantGroup;
 
     if (normalizedStock !== undefined) {
       cleaned.stockLevel = normalizedStock;
@@ -504,6 +562,11 @@ export function parseProductsCsv(csvText: string): Product[] {
   const promoWeeksIdx = findCol(['target weeks', 'weeks', 'promotional weeks']);
   const hiatusIdx = findCol(['min promo gap', 'hiatus', 'gap']);
   const coopIdx = findCol(['co-op', 'coop', 'supplier funding', 'rebate eligible']);
+  const brandIdx = findCol(['supplier / brand', 'brand', 'supplier brand', 'manufacturer']);
+  const variantIdx = findCol(['variant group', 'variant', 'flavour', 'family']);
+  const cartonIdx = findCol(['units per carton', 'carton qty', 'pack size', 'units/case']);
+  const caseDealTypeIdx = findCol(['case deal type', 'deal type']);
+  const caseDealValIdx = findCol(['case deal value', 'case deal', 'deal value']);
 
   const cleanNum = (val: string | undefined, defaultVal: number): number => {
     if (!val) return defaultVal;
@@ -600,12 +663,26 @@ export function parseProductsCsv(csvText: string): Product[] {
       : [cleanCategory, 'Imported'];
 
     const parsedStock = stockIdx !== -1 ? normalizeOptionalStock(tokens[stockIdx]) : undefined;
+    const rawBrand = brandIdx !== -1 ? stripHtml(tokens[brandIdx]) : '';
+    const rawVariant = variantIdx !== -1 ? stripHtml(tokens[variantIdx]) : '';
+    const unitsPerCarton = cartonIdx !== -1 ? Math.max(1, Math.round(cleanNum(tokens[cartonIdx], 12))) : 12;
+    const rawDealType = (caseDealTypeIdx !== -1 ? tokens[caseDealTypeIdx] || '' : '').toLowerCase().trim();
+    let defaultCaseDealType: CaseDealType = 'none';
+    if (rawDealType.includes('percent') || rawDealType.includes('%')) defaultCaseDealType = 'percent_off_cost';
+    else if (rawDealType.includes('case') || rawDealType.includes('carton')) defaultCaseDealType = 'dollar_off_case';
+    else if (rawDealType.includes('unit') || rawDealType.includes('$')) defaultCaseDealType = 'dollar_off_unit';
+    const defaultCaseDealValue = caseDealValIdx !== -1 ? Math.max(0, cleanNum(tokens[caseDealValIdx], 0)) : 0;
 
     const productItem: Product = {
       sku: cleanSku,
       name: cleanName,
       category: cleanCategory,
       subcategory: cleanSubcategory,
+      ...(rawBrand ? { supplierBrand: rawBrand } : {}),
+      ...(rawVariant ? { variantGroup: rawVariant } : {}),
+      unitsPerCarton,
+      defaultCaseDealType,
+      defaultCaseDealValue,
       rrp: Math.max(0.01, rrp),
       cost: Math.max(0.01, cost),
       marginPercent,

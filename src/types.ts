@@ -57,11 +57,51 @@ export type CataloguePlacement =
   | 'digital_app'
   | 'checkout_end';
 
+export type CaseDealType = 'none' | 'dollar_off_unit' | 'dollar_off_case' | 'percent_off_cost';
+
+export type ScheduleCadenceMode = 'every_week' | 'with_gaps';
+
+export interface SchedulePreferences {
+  preventCategoryCannibalization: boolean;
+  preventSubcategoryCannibalization: boolean;
+  preventBrandSupplierClash: boolean;
+  preventVariantClash: boolean;
+  cadenceMode: ScheduleCadenceMode;
+  gapIntervalWeeks?: number; // e.g., 1 rest week after every N active promo weeks (default 3 -> promo 3 wks, gap 1 wk)
+  minHiatusWeeks: number;
+  maxPromosPerSkuPerYear: number;
+  strategicObjective: 'balanced_growth' | 'margin_protection' | 'volume_maximization' | 'accc_fortress';
+  retailerModel: string;
+  aiPromptRuleText?: string;
+}
+
+export interface AiParsedConstraints {
+  preferredCadenceMode?: ScheduleCadenceMode;
+  gapIntervalWeeks?: number;
+  minHiatusWeeks?: number;
+  maxPromosPerSkuPerYear?: number;
+  preventCategoryCannibalization?: boolean;
+  preventSubcategoryCannibalization?: boolean;
+  preventBrandSupplierClash?: boolean;
+  preventVariantClash?: boolean;
+  excludedWeeks?: number[];
+  pinnedWeeks?: Array<{ weekNumber: number; sku: string }>;
+  minMarginFloorPercent?: number;
+  maxDiscountPercent?: number;
+  strategicObjective?: 'balanced_growth' | 'margin_protection' | 'volume_maximization' | 'accc_fortress';
+  rationale?: string;
+}
+
 export interface Product {
   sku: string;
   name: string;
   category: string;
   subcategory: string;
+  supplierBrand?: string;
+  variantGroup?: string;
+  unitsPerCarton?: number;
+  defaultCaseDealType?: CaseDealType;
+  defaultCaseDealValue?: number;
   rrp: number; // AUD Recommended Retail Price
   cost: number; // AUD Unit COGS
   marginPercent: number; // Regular Baseline Margin %
@@ -90,6 +130,8 @@ export interface PromoMechanic {
   promoRrp: number; // AUD promotional selling price
   label: string; // e.g. "Save 30%", "2 for $35", "$49 Hot Buy"
   supplierFundingPerUnit: number; // Trade scan funding AUD per unit from vendor
+  caseDealType?: CaseDealType;
+  caseDealValue?: number;
 }
 
 export interface WeekPromotion {
@@ -100,11 +142,13 @@ export interface WeekPromotion {
   endDate: string; // "12 Jan 2026"
   australianEvent?: string; // "Australia Day Weekend", "EOFY Super Sale", etc.
   isMajorRetailMoment: boolean;
+  isPromoSkipped?: boolean;
   campaignTheme: string;
   strategicObjective: StrategicObjective;
   heroSku: string;
   secondarySkus: string[];
   mechanic: PromoMechanic;
+  skuCaseDeals?: Record<string, { type: CaseDealType; value: number }>;
   cataloguePlacement: CataloguePlacement;
   activeChannels: string[]; // ['Print Catalogue', 'Digital App Push', 'In-Store Gondola', 'EDM Newsletter', 'Meta/Google Ads']
   projectedUnits: number;
@@ -120,7 +164,7 @@ export interface WeekPromotion {
 export interface ClashReport {
   id: string;
   weekNumber: number;
-  type: 'category_cannibalization' | 'hiatus_breach' | 'seasonality_mismatch' | 'margin_dilution';
+  type: 'category_cannibalization' | 'hiatus_breach' | 'seasonality_mismatch' | 'margin_dilution' | 'supplier_brand_clash' | 'variant_clash';
   severity: 'critical' | 'warning' | 'info';
   message: string;
   affectedSkus: string[];
@@ -199,7 +243,8 @@ export type AppTab =
   | 'crm' 
   | 'billing'
   | 'deletion-engine'
-  | 'breakeven-basket';
+  | 'breakeven-basket'
+  | 'scan-order';
 
 export interface ActivityLogEntry {
   id: string;
@@ -534,3 +579,74 @@ export interface AdminAnalyticsSummary {
   payoutHistory: CreatorPayoutRecord[];
 }
 
+// ---------------------------------------------------------------------------
+// STORE SCAN & PO BUILDER TYPES
+// ---------------------------------------------------------------------------
+export type ScanPoOrderMode = 'store_order' | 'rep_draft';
+
+export interface ScanCatalogueItem {
+  barcode: string;
+  sku: string;
+  name: string;
+  supplierName: string;
+  supplierEmail?: string;
+  packSize: number;
+  unitCostExGst: number;
+  gstApplicable: boolean;
+  updatedAt?: string;
+}
+
+export interface ScanPoLineItem {
+  id: string;
+  barcode: string;
+  sku: string;
+  name: string;
+  supplierName: string;
+  supplierEmail?: string;
+  packSize: number;
+  unitCostExGst: number;
+  cartonQty: number;
+  gstApplicable: boolean;
+}
+
+export interface ScanPoOrderMetadata {
+  orderMode: ScanPoOrderMode;
+  poNumber: string;
+  storeName: string;
+  storeAbn: string;
+  storeEmail: string;
+  deliveryDate: string;
+  notes: string;
+}
+
+export interface ScanSupplierGroup {
+  supplierName: string;
+  supplierEmail?: string;
+  lines: ScanPoLineItem[];
+  totalCartons: number;
+  totalUnits: number;
+  subtotalExGst: number;
+  gstAmount: number;
+  totalIncGst: number;
+}
+
+export interface ScanPoHistoryEntry {
+  id: string;
+  poNumber: string;
+  supplierName: string;
+  supplierEmail?: string;
+  orderMode: ScanPoOrderMode;
+  storeName: string;
+  storeAbn: string;
+  storeEmail: string;
+  deliveryDate: string;
+  notes: string;
+  createdAt: string;
+  exportedVia?: 'print' | 'email' | 'csv' | 'manual' | 'sample';
+  lines: ScanPoLineItem[];
+  totalCartons: number;
+  totalUnits: number;
+  subtotalExGst: number;
+  gstAmount: number;
+  totalIncGst: number;
+}

@@ -35,7 +35,14 @@ import { generateDefault52WeekPlan, calculateStrategyKPIs, auditClashes, autoRes
 import { exportPromotionsToCsv, sanitizeProducts } from './utils/csvHelpers';
 import { buildSkuPromoDemandMap, computeSkuInventoryForecast } from './utils/inventoryForecast';
 import { hasUsedFreeTrial, markTrialUsedLocal } from './utils/entitlements';
-import { initAnalytics } from './utils/analytics';
+import {
+  initAnalytics,
+  GA4_MEASUREMENT_ID,
+  setUserAnalyticsContext,
+  trackModuleAccess,
+  trackPurchaseSuccess,
+  trackSubscriptionUpgrade,
+} from './utils/analytics';
 import {
   auth,
   syncUserProfile,
@@ -51,7 +58,7 @@ import {
   Folder,
   Calendar as CalendarIcon,
   SlidersHorizontal,
-  ShoppingCart,
+  ScanBarcode,
   Menu as MenuIcon
 } from 'lucide-react';
 
@@ -94,6 +101,8 @@ import { EnterpriseSidebar } from './components/EnterpriseSidebar';
 import { ExecutiveDashboardView } from './components/ExecutiveDashboardView';
 import { PromotionBuilderView } from './components/PromotionBuilderView';
 import { CommercialInsightsView } from './components/CommercialInsightsView';
+import { RangeFirstLockScreen } from './components/RangeFirstLockScreen';
+import { StoreScanPoBuilderView } from './components/StoreScanPoBuilderView';
 
 export default function App() {
   // Initialize analytics telemetry (GA4, Firebase Analytics, Microsoft Clarity)
@@ -127,10 +136,11 @@ export default function App() {
     sku?: string;
     weekNumber?: number;
     discountPercent?: number;
+    triggeredAt?: number;
   } | null>(null);
 
   const handleOpenPromotionBuilderPreloaded = (config: { sku: string; weekNumber?: number; discountPercent?: number }) => {
-    setPreloadedPromoConfig(config);
+    setPreloadedPromoConfig({ ...config, triggeredAt: Date.now() });
     setActiveTab('promotion-builder');
     logActivity('Promotion', 'Insight Action Triggered', `Opened Promotion Builder preloaded for SKU ${config.sku}, Week ${config.weekNumber || 1}, Discount ${config.discountPercent || 25}%.`);
     showToast(`Pre-loaded SKU ${config.sku} and suggested modification into Promotion Builder.`, 'success');
@@ -203,7 +213,8 @@ export default function App() {
         'billing',
         'commercial-journey',
         'deletion-engine',
-        'breakeven-basket'
+        'breakeven-basket',
+        'scan-order'
       ];
       if (validTabs.includes(tab as AppTab)) {
         return tab as AppTab;
@@ -232,7 +243,7 @@ export default function App() {
     }
 
     if (typeof window !== 'undefined' && (window as any).gtag) {
-      (window as any).gtag('config', 'G-KZNE8P2GRJ', {
+      (window as any).gtag('config', GA4_MEASUREMENT_ID, {
         page_path: hash,
         page_title: `RangeCraft — ${activeTab.toUpperCase()}`
       });
@@ -241,7 +252,14 @@ export default function App() {
         page_title: `RangeCraft — ${activeTab.toUpperCase()}`
       });
     }
-  }, [activeTab, selectedWeekNum]);
+    trackModuleAccess(activeTab, user?.subscriptionTier || 'free_trial');
+  }, [activeTab, selectedWeekNum, user?.subscriptionTier]);
+
+  useEffect(() => {
+    if (user) {
+      setUserAnalyticsContext(user.uid, user.subscriptionTier, user.companyName);
+    }
+  }, [user]);
 
   // Listen to hashchange for browser back/forward navigation
   useEffect(() => {
@@ -268,7 +286,8 @@ export default function App() {
         'billing',
         'commercial-journey',
         'deletion-engine',
-        'breakeven-basket'
+        'breakeven-basket',
+        'scan-order'
       ];
       if (validTabs.includes(tab as AppTab)) {
         const resolvedTab: AppTab = tab === 'overview' && user ? 'dashboard' : (tab as AppTab);
@@ -442,7 +461,13 @@ export default function App() {
     const sessionId = urlParams.get('session_id');
     const exportUnlocked = urlParams.get('export_unlocked');
     const plan = urlParams.get('plan');
-    const status = urlParams.get('status');
+    const canceled = urlParams.get('canceled');
+
+    if (canceled === 'true') {
+      showToast('Stripe checkout was cancelled. No charge was made.', 'info');
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      return;
+    }
 
     if (sessionId) {
       fetch(`/api/stripe/verify-session?session_id=${encodeURIComponent(sessionId)}&plan=${encodeURIComponent(plan || '')}&export_unlocked=${encodeURIComponent(exportUnlocked || '')}`)
@@ -453,18 +478,25 @@ export default function App() {
             const isPro = data.planType === 'pro_subscription' || data.planType === 'subscription_monthly' || data.planType === 'subscription_annual' || plan === 'pro_subscription';
             const isAiTopUp = data.planType === 'ai_topup' || plan === 'ai_topup';
             const targetExport = isAiTopUp ? 'ai_topup_50' : (data.exportId || exportUnlocked || 'master_52week_plan');
+            const itemTitle = data.itemName || (isAiTopUp ? '+50 AI Scenario Top-Up' : isStarter ? 'Starter Plan Subscription' : isPro ? 'Growth Plan Subscription' : 'Commercial Export Package');
+            const amountAud = data.amountPaidAud || (isAiTopUp ? 29 : isStarter ? 59 : isPro ? 149 : 19);
 
             handleCheckoutSuccess(targetExport, isPro ? 'pro_planner' : isStarter ? 'starter_plan' : undefined);
             
             handleLogCreatorTransaction(
-              data.itemName || (isAiTopUp ? '+50 AI Scenario Top-Up' : isStarter ? 'Starter Plan Subscription' : isPro ? 'Pro Plan Subscription' : 'Commercial Export Package'),
+              itemTitle,
               isAiTopUp ? 'ai_topup' : (isPro || isStarter) ? 'subscription_monthly' : 'export_single',
-              data.amountPaidAud || (isAiTopUp ? 29 : isStarter ? 59 : isPro ? 149 : 19),
+              amountAud,
               'credit_card',
               data.invoiceNumber || `INV-AU-${sessionId.slice(-6).toUpperCase()}`
             );
 
-            showToast(`Stripe Payment Verified! ${isAiTopUp ? '+50 AI Scenarios credited' : isStarter ? 'Starter Plan active' : isPro ? 'Pro Plan active with unlimited exports' : 'Commercial deliverable unlocked'} (Invoice #${data.invoiceNumber || 'AU-2026'}).`, 'success');
+            trackPurchaseSuccess(targetExport, itemTitle, amountAud, data.invoiceNumber || sessionId, 'stripe_card');
+            if (isPro || isStarter) {
+              trackSubscriptionUpgrade(data.planType || (isPro ? 'pro_subscription' : 'starter_subscription'), amountAud, isPro ? 'pro_planner' : 'starter_plan');
+            }
+
+            showToast(`Stripe Payment Verified! ${isAiTopUp ? '+50 AI Scenarios credited' : isStarter ? 'Starter Plan active' : isPro ? 'Growth Plan active with unlimited exports' : 'Commercial deliverable unlocked'} (Invoice #${data.invoiceNumber || 'AU-2026'}).`, 'success');
           }
         })
         .catch(err => {
@@ -472,7 +504,7 @@ export default function App() {
         })
         .finally(() => {
           // Clean the query parameters cleanly without refreshing
-          window.history.replaceState({}, document.title, window.location.pathname);
+          window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
         });
     }
   }, []);
@@ -623,7 +655,8 @@ export default function App() {
       tab === 'promotion-builder' ||
       tab === 'commercial-insights' ||
       tab === 'directory' ||
-      tab === 'wholesale'
+      tab === 'wholesale' ||
+      tab === 'scan-order'
     ) {
       setActiveTab(tab);
       return;
@@ -857,6 +890,11 @@ export default function App() {
   };
 
   const handleAutoGeneratePlanFromRange = () => {
+    if (products.length === 0) {
+      showToast('Upload or add at least one product SKU first.', 'info');
+      setActiveTab('catalog');
+      return;
+    }
     handlePaidFeatureAction(() => {
       const newPlan = generateDefault52WeekPlan(products);
       setPromotions(newPlan);
@@ -867,6 +905,11 @@ export default function App() {
   };
 
   const handleAutoFixClashes = () => {
+    if (products.length === 0) {
+      showToast('Upload or add at least one product SKU first.', 'info');
+      setActiveTab('catalog');
+      return;
+    }
     handlePaidFeatureAction(() => {
       const result = autoReslotAndFixClashes(promotions, products);
       setPromotions(result.repairedPromotions);
@@ -960,7 +1003,7 @@ export default function App() {
         ...(base || {
           uid: 'guest_pro_' + Date.now(),
           email: 'pro.subscriber@retailtrade.com.au',
-          displayName: isStarter ? 'Starter Plan Subscriber' : isEnterprise ? 'Enterprise Partner' : 'Pro Plan Subscriber',
+          displayName: isStarter ? 'Starter Plan Subscriber' : isEnterprise ? 'Enterprise Partner' : 'Growth Plan Subscriber',
           subscriptionStatus: 'active',
           createdAt: new Date().toISOString(),
           lastLoginAt: new Date().toISOString(),
@@ -987,7 +1030,7 @@ export default function App() {
       markTrialUsedLocal();
       setUser(updatedUser);
       syncUserProfile(updatedUser);
-      const planLabel = isEnterprise ? 'Enterprise Portfolio' : isStarter ? 'Starter Plan' : 'Pro Plan';
+      const planLabel = isEnterprise ? 'Enterprise Portfolio' : isStarter ? 'Starter Plan' : 'Growth Plan';
       logActivity('Subscription', `Upgraded to ${planLabel}`, `Completed checkout for ${tier}.`);
       showToast(`Welcome to ${planLabel}! Your workspace limits and exports are unlocked.`, 'success');
     } else {
@@ -1021,6 +1064,11 @@ export default function App() {
   };
 
   const handleOpenAiStrategist = () => {
+    if (products.length === 0) {
+      showToast('Upload or add at least one product SKU first.', 'info');
+      setActiveTab('catalog');
+      return;
+    }
     handleProtectedAction(() => {
       const totalAiAvailable = (user?.aiGenerationsRemaining || 0) + (user?.aiTopUpCredits || 0);
       if (user && !user.unlimitedAi && totalAiAvailable <= 0) {
@@ -1190,7 +1238,7 @@ export default function App() {
     >
       {/* Toast Notification */}
       {statusToast && (
-        <div className="fixed bottom-20 md:bottom-6 inset-x-3 md:inset-x-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900/95 text-white border border-slate-700 shadow-2xl backdrop-blur-md text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200 max-w-md md:max-w-sm">
+        <div className="no-print fixed bottom-20 md:bottom-6 inset-x-3 md:inset-x-auto md:right-6 z-50 flex items-center gap-2.5 px-4 py-3 rounded-xl bg-slate-900/95 text-white border border-slate-700 shadow-2xl backdrop-blur-md text-xs font-semibold animate-in fade-in slide-in-from-bottom-3 duration-200 max-w-md md:max-w-sm">
           <div className={`w-2 h-2 rounded-full shrink-0 ${statusToast.type === 'success' ? 'bg-emerald-400' : 'bg-blue-400'}`} />
           <span className="leading-snug">{statusToast.message}</span>
         </div>
@@ -1255,6 +1303,7 @@ export default function App() {
         onSelectTheme={handleSelectTheme}
         isSaving={isSaving}
         lastSyncedTime={lastSyncedTime}
+        productsCount={products.length}
       />
 
       {/* Main Content Area */}
@@ -1314,8 +1363,27 @@ export default function App() {
               return riskSet.size;
             })()}
             clashCount={kpis.totalClashesCount}
+            productsCount={products.length}
           />
           <main className="flex-1 min-w-0 max-w-7xl mx-auto px-3 sm:px-6 lg:px-8 py-5 sm:py-7 pb-24 md:pb-8 space-y-5 sm:space-y-6">
+          {products.length === 0 && !['overview', 'catalog', 'billing', 'scan-order'].includes(activeTab) ? (
+            <RangeFirstLockScreen
+              currentTheme={currentTheme}
+              targetTab={activeTab}
+              onGoToCatalog={() => setActiveTab('catalog')}
+              onOpenUploadModal={() => handlePaidFeatureAction(() => setIsUploadModalOpen(true), 'Custom CSV SKU Range Import')}
+              onReturnOverview={() => setActiveTab('overview')}
+            />
+          ) : (
+            <>
+          {activeTab === 'scan-order' && (
+            <StoreScanPoBuilderView
+              currentTheme={currentTheme}
+              rangeProducts={products}
+              showToast={showToast}
+            />
+          )}
+
           {activeTab === 'dashboard' && (
             <ExecutiveDashboardView
               user={user}
@@ -1328,6 +1396,7 @@ export default function App() {
               onOpenUploadModal={() => handlePaidFeatureAction(() => setIsUploadModalOpen(true), 'Custom CSV SKU Range Import')}
               onOpenAddProductModal={() => handleTabNavigation('catalog')}
               onAutoFormulatePlan={handleOpenAiStrategist}
+              onOpenPromotionBuilderWithConfig={handleOpenPromotionBuilderPreloaded}
             />
           )}
 
@@ -1484,7 +1553,7 @@ export default function App() {
                 onNavigateTab={handleTabNavigation}
                 currentTheme={currentTheme}
                 onOpenPricingModal={() => {
-                  setPaywallFeatureTriggered('Commercial Pro Workflow');
+                  setPaywallFeatureTriggered('Growth Plan Workflow');
                   setIsPricingModalOpen(true);
                 }}
               />
@@ -1537,7 +1606,7 @@ export default function App() {
                 onNavigateTab={handleTabNavigation}
                 currentTheme={currentTheme}
                 onOpenPricingModal={() => {
-                  setPaywallFeatureTriggered('Commercial Pro Workflow');
+                  setPaywallFeatureTriggered('Growth Plan Workflow');
                   setIsPricingModalOpen(true);
                 }}
               />
@@ -1611,7 +1680,7 @@ export default function App() {
                 onNavigateTab={handleTabNavigation}
                 currentTheme={currentTheme}
                 onOpenPricingModal={() => {
-                  setPaywallFeatureTriggered('Commercial Pro Workflow');
+                  setPaywallFeatureTriggered('Growth Plan Workflow');
                   setIsPricingModalOpen(true);
                 }}
               />
@@ -1633,7 +1702,7 @@ export default function App() {
                 onNavigateTab={handleTabNavigation}
                 currentTheme={currentTheme}
                 onOpenPricingModal={() => {
-                  setPaywallFeatureTriggered('Commercial Pro Workflow');
+                  setPaywallFeatureTriggered('Growth Plan Workflow');
                   setIsPricingModalOpen(true);
                 }}
               />
@@ -1662,7 +1731,7 @@ export default function App() {
                 onNavigateTab={handleTabNavigation}
                 currentTheme={currentTheme}
                 onOpenPricingModal={() => {
-                  setPaywallFeatureTriggered('Commercial Pro Workflow');
+                  setPaywallFeatureTriggered('Growth Plan Workflow');
                   setIsPricingModalOpen(true);
                 }}
               />
@@ -1694,6 +1763,8 @@ export default function App() {
               currentTheme={currentTheme}
             />
           )}
+            </>
+          )}
           </main>
         </div>
       )}
@@ -1703,7 +1774,7 @@ export default function App() {
         currentTheme={currentTheme}
         onNavigateTab={handleTabNavigation}
         onOpenPricingModal={() => {
-          setPaywallFeatureTriggered('Commercial Pro Features');
+          setPaywallFeatureTriggered('Growth Plan Features');
           setIsPricingModalOpen(true);
         }}
         onOpenUploadModal={() => handlePaidFeatureAction(() => setIsUploadModalOpen(true), 'Custom CSV SKU Range Import')}
@@ -1776,7 +1847,7 @@ export default function App() {
         user={user}
         onUpgradeSuccess={(updatedProfile) => {
           setUser(updatedProfile);
-          showToast(`Account updated to ${updatedProfile.subscriptionTier === 'starter_plan' ? 'Starter Plan' : updatedProfile.subscriptionTier === 'pro_planner' ? 'Pro Plan' : 'Enterprise Tier'}!`, 'success');
+          showToast(`Account updated to ${updatedProfile.subscriptionTier === 'starter_plan' ? 'Starter Plan' : updatedProfile.subscriptionTier === 'pro_planner' ? 'Growth Plan' : 'Enterprise Tier'}!`, 'success');
         }}
         onLogCreatorTransaction={handleLogCreatorTransaction}
         onOpenEnterpriseQuote={() => {
@@ -1911,7 +1982,7 @@ export default function App() {
       {activeTab !== 'overview' && (
         <nav
           aria-label="Workspace Mobile Navigation"
-          className={`fixed bottom-0 inset-x-0 z-40 md:hidden border-t h-16 px-1.5 grid grid-cols-5 items-center backdrop-blur-md ${
+          className={`no-print fixed bottom-0 inset-x-0 z-40 md:hidden border-t h-16 px-1.5 grid grid-cols-5 items-center backdrop-blur-md ${
             isLight
               ? 'bg-white/95 border-slate-200 text-slate-600'
               : 'bg-[#0b0f19]/95 border-slate-800 text-slate-400'
@@ -1922,7 +1993,7 @@ export default function App() {
             { label: 'Promos', tab: 'promotion-builder' as AppTab, icon: SlidersHorizontal },
             { label: 'Calendar', tab: 'calendar' as AppTab, icon: CalendarIcon },
             { label: 'Products', tab: 'catalog' as AppTab, icon: Folder },
-            { label: 'Wholesale', tab: 'wholesale' as AppTab, icon: ShoppingCart },
+            { label: 'Scan & Order', tab: 'scan-order' as AppTab, icon: ScanBarcode },
           ].map((item) => {
             const Icon = item.icon;
             const isDashboardChild = ['dashboard', 'directory', 'commercial-insights'].includes(activeTab);
